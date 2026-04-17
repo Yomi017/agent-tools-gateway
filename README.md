@@ -3,6 +3,8 @@
 Local HTTP and MCP gateway for agent-callable tools. The first backend wraps a
 self-hosted ConvertX service without vendoring or modifying ConvertX.
 
+Chinese guide: [README.zh-CN.md](README.zh-CN.md)
+
 ## Layout
 
 ```text
