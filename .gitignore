@@ -10,14 +10,5 @@ dist/
 build/
 *.egg-info/
 config.yaml
-tool-work/*
-!tool-work/.gitkeep
-!tool-work/input/
-tool-work/input/*
-!tool-work/input/.gitkeep
-!tool-work/output/
-tool-work/output/*
-!tool-work/output/.gitkeep
-!tool-work/tmp/
-tool-work/tmp/*
-!tool-work/tmp/.gitkeep
+tool-work/
+data/
