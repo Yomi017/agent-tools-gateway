@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "Keep ConvertX upgrades review-only.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/c4illin/convertx"],
+      "automerge": false
+    }
+  ]
+}

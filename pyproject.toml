@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-tools-gateway"
+version = "0.1.0"
+description = "Local HTTP and MCP gateway for agent-callable tools."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0,<1",
+  "fastmcp>=2.0.0,<3",
+  "httpx>=0.28.0,<1",
+  "pydantic>=2.10.0,<3",
+  "pydantic-settings>=2.7.0,<3",
+  "pyyaml>=6.0.0,<7",
+  "uvicorn[standard]>=0.34.0,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9",
+  "pytest-asyncio>=0.24.0,<1",
+]
+
+[project.scripts]
+toolhub-api = "toolhub.api:main"
+toolhub-mcp = "toolhub.mcp_server:main"
+toolhub-mcp-http = "toolhub.mcp_server:http_main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/toolhub"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

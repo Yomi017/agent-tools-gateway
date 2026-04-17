@@ -1,0 +1,48 @@
+services:
+  convertx:
+    image: ghcr.io/c4illin/convertx:0.17.0
+    container_name: convertx
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      JWT_SECRET: "change-this-local-secret"
+      HTTP_ALLOWED: "true"
+      ALLOW_UNAUTHENTICATED: "true"
+      AUTO_DELETE_EVERY_N_HOURS: "24"
+    volumes:
+      - ./data/convertx:/app/data
+
+  toolhub-api:
+    build: .
+    restart: unless-stopped
+    command: ["toolhub-api"]
+    depends_on:
+      - convertx
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
+      TOOLHUB_API_HOST: "0.0.0.0"
+      TOOLHUB_ALLOWED_INPUT_ROOTS: "/app/tool-work/input"
+      TOOLHUB_ALLOWED_OUTPUT_ROOTS: "/app/tool-work/output"
+      TOOLHUB_TEMP_ROOT: "/app/tool-work/tmp"
+    volumes:
+      - ./tool-work:/app/tool-work
+
+  toolhub-mcp:
+    build: .
+    restart: unless-stopped
+    command: ["toolhub-mcp-http"]
+    depends_on:
+      - convertx
+    ports:
+      - "127.0.0.1:8766:8766"
+    environment:
+      TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
+      TOOLHUB_MCP_HOST: "0.0.0.0"
+      TOOLHUB_ALLOWED_INPUT_ROOTS: "/app/tool-work/input"
+      TOOLHUB_ALLOWED_OUTPUT_ROOTS: "/app/tool-work/output"
+      TOOLHUB_TEMP_ROOT: "/app/tool-work/tmp"
+    volumes:
+      - ./tool-work:/app/tool-work
