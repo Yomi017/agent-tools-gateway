@@ -1,8 +1,14 @@
 services:
   convertx:
-    image: ghcr.io/c4illin/convertx:0.17.0
+    image: ghcr.io/c4illin/convertx:v0.17.0
     container_name: convertx
     restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        sed -i 's/app.listen(3000);/app.listen({ port: 3000, hostname: "0.0.0.0" });/' /app/dist/src/index.js
+        exec bun run dist/src/index.js
     ports:
       - "127.0.0.1:3000:3000"
     environment:

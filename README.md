@@ -54,10 +54,14 @@ To run ConvertX, REST, and MCP together:
 docker compose up -d --build
 ```
 
+The compose setup keeps all public ports bound to `127.0.0.1`. ConvertX
+v0.17.0 is patched at container startup to listen on `0.0.0.0` inside Docker,
+so Docker port publishing and other compose services can reach it.
+
 The compose file pins ConvertX to:
 
 ```text
-ghcr.io/c4illin/convertx:0.17.0
+ghcr.io/c4illin/convertx:v0.17.0
 ```
 
 Input and output files are restricted to:
@@ -118,7 +122,8 @@ OpenClaw config:
 openclaw mcp set toolhub '{"url":"http://127.0.0.1:8766/mcp","transport":"streamable-http","connectionTimeout":10000}'
 ```
 
-If an OpenClaw runtime runs inside Docker and needs to reach the host service:
+If an OpenClaw runtime runs inside Docker, publish MCP beyond host localhost
+first, for example by changing the compose port to `"8766:8766"`, then use:
 
 ```text
 http://host.docker.internal:8766/mcp
