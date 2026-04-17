@@ -30,11 +30,11 @@ services:
     environment:
       TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
       TOOLHUB_API_HOST: "0.0.0.0"
-      TOOLHUB_ALLOWED_INPUT_ROOTS: "/app/tool-work/input"
-      TOOLHUB_ALLOWED_OUTPUT_ROOTS: "/app/tool-work/output"
-      TOOLHUB_TEMP_ROOT: "/app/tool-work/tmp"
+      TOOLHUB_ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input"]'
+      TOOLHUB_ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output"]'
+      TOOLHUB_TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/tmp"
     volumes:
-      - ./tool-work:/app/tool-work
+      - ./tool-work:/home/shinku/data/service/tool/agent-tools-gateway/tool-work
 
   toolhub-mcp:
     build: .
@@ -47,8 +47,8 @@ services:
     environment:
       TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
       TOOLHUB_MCP_HOST: "0.0.0.0"
-      TOOLHUB_ALLOWED_INPUT_ROOTS: "/app/tool-work/input"
-      TOOLHUB_ALLOWED_OUTPUT_ROOTS: "/app/tool-work/output"
-      TOOLHUB_TEMP_ROOT: "/app/tool-work/tmp"
+      TOOLHUB_ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input"]'
+      TOOLHUB_ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output"]'
+      TOOLHUB_TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/tmp"
     volumes:
-      - ./tool-work:/app/tool-work
+      - ./tool-work:/home/shinku/data/service/tool/agent-tools-gateway/tool-work
