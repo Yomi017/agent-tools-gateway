@@ -25,6 +25,7 @@ dev = [
 ]
 
 [project.scripts]
+tool-call = "toolhub.cli:main"
 toolhub-api = "toolhub.api:main"
 toolhub-mcp = "toolhub.mcp_server:main"
 toolhub-mcp-http = "toolhub.mcp_server:http_main"

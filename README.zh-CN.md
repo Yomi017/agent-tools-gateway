@@ -96,6 +96,41 @@ curl -sS "http://127.0.0.1:8765/v1/convertx/targets?input_format=png" | jq '.tar
 
 单文件转换：
 
+短命令：
+
+```bash
+uv run tool-call convertx png \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png \
+  jpg \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output \
+  true
+```
+
+`tool-call` 默认输出 JSON。启用 `TOOLHUB_AUTH_TOKEN` 时，它会自动带上 Bearer token。
+
+只检查路径和格式是否可转换，不实际生成文件：
+
+```bash
+uv run tool-call convertx --check png \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png \
+  jpg \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output \
+  false
+```
+
+如果要指定转换器、API 地址或超时时间：
+
+```bash
+uv run tool-call convertx --converter imagemagick --api-url http://127.0.0.1:8765 --timeout 660 \
+  png \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png \
+  jpg \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output \
+  true
+```
+
+传统 curl：
+
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/v1/convertx/convert \
   -H 'Content-Type: application/json' \
