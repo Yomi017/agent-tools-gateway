@@ -12,8 +12,14 @@ src/toolhub/
   api.py                  # FastAPI REST API
   mcp_server.py           # FastMCP tools
   config.py               # config.yaml + TOOLHUB_* env
+  registry.py             # backend registry
   security.py             # path whitelist and safe tar extraction
-  backends/convertx.py    # ConvertX web/form workflow
+  tools/convertx/         # ConvertX backend package
+tools/
+  ConvertX/
+    README.md             # integration home
+    data/                 # runtime data, gitignored
+    work/                 # input/output/tmp, gitignored
 ```
 
 ## Local Setup
@@ -69,9 +75,17 @@ ghcr.io/c4illin/convertx:v0.17.0
 Input and output files are restricted to:
 
 ```text
-/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input
-/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output
+/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input
+/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output
 ```
+
+Optional shared Bearer token for both REST and MCP:
+
+```bash
+export TOOLHUB_AUTH_TOKEN="change-me-local-token"
+```
+
+Docker Compose passes this value into both `toolhub-api` and `toolhub-mcp`.
 
 ## REST
 
@@ -80,13 +94,19 @@ curl http://127.0.0.1:8765/health
 curl "http://127.0.0.1:8765/v1/convertx/targets?input_format=png"
 ```
 
+When `auth_token` is enabled:
+
+```bash
+curl -H "Authorization: Bearer $TOOLHUB_AUTH_TOKEN" http://127.0.0.1:8765/health
+```
+
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/convertx/convert \
   -H 'Content-Type: application/json' \
   -d '{
-    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input/example.png",
+    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png",
     "output_format": "jpg",
-    "output_dir": "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output",
+    "output_dir": "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output",
     "overwrite": false
   }'
 ```
@@ -118,10 +138,32 @@ mcp_servers:
       prompts: false
 ```
 
+When Bearer auth is enabled, add:
+
+```yaml
+headers:
+  Authorization: "Bearer ${TOOLHUB_AUTH_TOKEN}"
+```
+
+Canonical namespaced MCP tools are also registered:
+
+```text
+convertx_health
+convertx_list_targets
+convertx_convert_file
+convertx_convert_batch
+```
+
 OpenClaw config:
 
 ```bash
 openclaw mcp set toolhub '{"url":"http://127.0.0.1:8766/mcp","transport":"streamable-http","connectionTimeout":10000}'
+```
+
+With Bearer auth enabled:
+
+```bash
+openclaw mcp set toolhub "{\"url\":\"http://127.0.0.1:8766/mcp\",\"transport\":\"streamable-http\",\"connectionTimeout\":10000,\"headers\":{\"Authorization\":\"Bearer ${TOOLHUB_AUTH_TOKEN}\"}}"
 ```
 
 If an OpenClaw runtime runs inside Docker, publish MCP beyond host localhost

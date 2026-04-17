@@ -1,4 +1,3 @@
-convertx_base_url: "http://127.0.0.1:3000"
 api_host: "127.0.0.1"
 api_port: 8765
 mcp_host: "127.0.0.1"
@@ -8,9 +7,16 @@ connect_timeout_seconds: 30
 conversion_timeout_seconds: 600
 poll_interval_seconds: 1
 max_file_bytes: 536870912
-allowed_input_roots:
-  - /home/shinku/data/service/tool/agent-tools-gateway/tool-work/input
-allowed_output_roots:
-  - /home/shinku/data/service/tool/agent-tools-gateway/tool-work/output
-temp_root: /home/shinku/data/service/tool/agent-tools-gateway/tool-work/tmp
 # auth_token: "change-me-if-you-bind-beyond-localhost"
+# Or export TOOLHUB_AUTH_TOKEN="change-me-if-you-bind-beyond-localhost"
+
+backends:
+  convertx:
+    enabled: true
+    base_url: "http://127.0.0.1:3000"
+    work_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work"
+    allowed_input_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"
+    allowed_output_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"
+    temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"

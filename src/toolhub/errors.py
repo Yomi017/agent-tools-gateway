@@ -32,6 +32,16 @@ class ToolhubError(Exception):
         }
 
 
+def error_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, ToolhubError):
+        return exc.to_payload()
+    return ToolhubError(
+        "Unexpected toolhub failure.",
+        code="internal_error",
+        details={"type": type(exc).__name__, "message": str(exc)},
+    ).to_payload()
+
+
 class PathNotAllowedError(ToolhubError):
     code = "path_not_allowed"
 

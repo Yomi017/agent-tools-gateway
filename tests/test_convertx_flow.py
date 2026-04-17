@@ -22,7 +22,8 @@ def _archive() -> bytes:
 
 @pytest.mark.asyncio
 async def test_convertx_client_full_flow(settings) -> None:
-    input_file = settings.allowed_input_roots[0] / "sample.png"
+    runtime = settings.convertx()
+    input_file = runtime.allowed_input_roots[0] / "sample.png"
     input_file.write_bytes(b"png")
     calls: list[str] = []
 
@@ -52,12 +53,13 @@ async def test_convertx_client_full_flow(settings) -> None:
             return httpx.Response(200, content=_archive())
         return httpx.Response(404, text="missing")
 
-    client = ConvertXClient(settings, transport=httpx.MockTransport(handler))
+    client = ConvertXClient(runtime, transport=httpx.MockTransport(handler))
     job_id, archive, duration_ms = await client.convert_files([input_file], output_format="jpg")
 
     assert job_id == "42"
     assert duration_ms >= 0
     assert "POST /upload" in calls
-    output_dir = PathPolicy(settings).validate_output_dir(None)
-    outputs = safe_extract_tar_bytes(archive, output_dir, PathPolicy(settings))
+    policy = PathPolicy(runtime)
+    output_dir = policy.validate_output_dir(None)
+    outputs = safe_extract_tar_bytes(archive, output_dir, policy)
     assert outputs[0].filename == "sample.jpg"

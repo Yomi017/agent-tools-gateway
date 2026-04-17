@@ -10,5 +10,5 @@ dist/
 build/
 *.egg-info/
 config.yaml
-tool-work/
-data/
+tools/*/work/
+tools/*/data/

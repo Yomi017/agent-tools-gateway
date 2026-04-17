@@ -9,14 +9,22 @@ cd /home/shinku/data/service/tool/agent-tools-gateway
 输入目录：
 
 ```text
-/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input
+/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input
 ```
 
 输出目录：
 
 ```text
-/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output
+/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output
 ```
+
+如果要同时保护 REST 和 MCP：
+
+```bash
+export TOOLHUB_AUTH_TOKEN="change-me-local-token"
+```
+
+Docker Compose 会把这个值传给 `toolhub-api` 和 `toolhub-mcp`。
 
 ## 启动
 
@@ -60,12 +68,18 @@ curl http://127.0.0.1:3000/healthcheck
 curl http://127.0.0.1:8765/health
 ```
 
+启用 token 后：
+
+```bash
+curl -H "Authorization: Bearer $TOOLHUB_AUTH_TOKEN" http://127.0.0.1:8765/health
+```
+
 ## 手动转换
 
 先把文件放到输入目录：
 
 ```bash
-cp /path/to/example.png /home/shinku/data/service/tool/agent-tools-gateway/tool-work/input/
+cp /path/to/example.png /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/
 ```
 
 查询某种格式支持转什么：
@@ -86,7 +100,7 @@ curl -sS "http://127.0.0.1:8765/v1/convertx/targets?input_format=png" | jq '.tar
 curl -sS -X POST http://127.0.0.1:8765/v1/convertx/convert \
   -H 'Content-Type: application/json' \
   -d '{
-    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input/example.png",
+    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png",
     "output_format": "jpg",
     "overwrite": true
   }'
@@ -99,8 +113,8 @@ curl -sS -X POST http://127.0.0.1:8765/v1/convertx/convert-batch \
   -H 'Content-Type: application/json' \
   -d '{
     "input_paths": [
-      "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input/a.png",
-      "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input/b.png"
+      "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/a.png",
+      "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/b.png"
     ],
     "output_format": "jpg",
     "overwrite": true
@@ -117,6 +131,16 @@ hermes mcp test toolhub
 hermes mcp list
 ```
 
+如果启用了 token，Hermes 配置里加：
+
+```yaml
+mcp_servers:
+  toolhub:
+    url: "http://127.0.0.1:8766/mcp"
+    headers:
+      Authorization: "Bearer ${TOOLHUB_AUTH_TOKEN}"
+```
+
 重载：
 
 ```text
@@ -130,12 +154,22 @@ mcp_toolhub_toolhub_health
 mcp_toolhub_list_conversion_targets
 mcp_toolhub_convert_file
 mcp_toolhub_convert_batch
+mcp_toolhub_convertx_health
+mcp_toolhub_convertx_list_targets
+mcp_toolhub_convertx_convert_file
+mcp_toolhub_convertx_convert_batch
 ```
 
 ## OpenClaw
 
 ```bash
 openclaw mcp set toolhub '{"url":"http://127.0.0.1:8766/mcp","transport":"streamable-http","connectionTimeout":10000}'
+```
+
+启用 token 后：
+
+```bash
+openclaw mcp set toolhub "{\"url\":\"http://127.0.0.1:8766/mcp\",\"transport\":\"streamable-http\",\"connectionTimeout\":10000,\"headers\":{\"Authorization\":\"Bearer ${TOOLHUB_AUTH_TOKEN}\"}}"
 ```
 
 ## 开机脚本

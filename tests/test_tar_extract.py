@@ -20,7 +20,7 @@ def _tar_bytes(entries: dict[str, bytes]) -> bytes:
 
 
 def test_safe_extract_tar(settings) -> None:
-    policy = PathPolicy(settings)
+    policy = PathPolicy(settings.convertx())
     output_dir = policy.validate_output_dir(None)
     outputs = safe_extract_tar_bytes(
         _tar_bytes({"converted.jpg": b"image"}),
@@ -33,7 +33,7 @@ def test_safe_extract_tar(settings) -> None:
 
 
 def test_safe_extract_rejects_parent_traversal(settings) -> None:
-    policy = PathPolicy(settings)
+    policy = PathPolicy(settings.convertx())
     output_dir = policy.validate_output_dir(None)
 
     with pytest.raises(UnsafeArchiveError):
@@ -41,7 +41,7 @@ def test_safe_extract_rejects_parent_traversal(settings) -> None:
 
 
 def test_safe_extract_rejects_duplicate_member(settings) -> None:
-    policy = PathPolicy(settings)
+    policy = PathPolicy(settings.convertx())
     output_dir = policy.validate_output_dir(None)
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as archive:
@@ -55,7 +55,7 @@ def test_safe_extract_rejects_duplicate_member(settings) -> None:
 
 
 def test_safe_extract_rejects_existing_without_overwrite(settings) -> None:
-    policy = PathPolicy(settings)
+    policy = PathPolicy(settings.convertx())
     output_dir = policy.validate_output_dir(None)
     (output_dir / "same.txt").write_text("old", encoding="utf-8")
 

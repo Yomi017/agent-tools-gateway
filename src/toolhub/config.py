@@ -3,27 +3,19 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_origin
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-DEFAULT_WORK_ROOT = Path(
-    os.getenv(
-        "TOOLHUB_WORK_ROOT",
-        "/home/shinku/data/service/tool/agent-tools-gateway/tool-work",
-    )
+DEFAULT_GATEWAY_ROOT = Path(
+    os.getenv("TOOLHUB_ROOT", "/home/shinku/data/service/tool/agent-tools-gateway")
 )
-
-
-def _default_input_roots() -> list[Path]:
-    return [DEFAULT_WORK_ROOT / "input"]
-
-
-def _default_output_roots() -> list[Path]:
-    return [DEFAULT_WORK_ROOT / "output"]
+DEFAULT_TOOLS_ROOT = DEFAULT_GATEWAY_ROOT / "tools"
+DEFAULT_CONVERTX_HOME = DEFAULT_TOOLS_ROOT / "ConvertX"
+DEFAULT_CONVERTX_WORK_ROOT = DEFAULT_CONVERTX_HOME / "work"
 
 
 def _split_paths(value: str) -> list[str]:
@@ -32,20 +24,148 @@ def _split_paths(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _coerce_path_list(value: Any) -> Any:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("[") or stripped.startswith("-"):
+            parsed = yaml.safe_load(stripped)
+            if isinstance(parsed, list):
+                return parsed
+        return _split_paths(value)
+    return value
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _nested_model(annotation: Any) -> type[BaseModel] | None:
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    origin = get_origin(annotation)
+    if origin is None:
+        return None
+    for arg in get_args(annotation):
+        if arg is None or arg is type(None):
+            continue
+        nested = _nested_model(arg)
+        if nested is not None:
+            return nested
+    return None
+
+
+def _field_name(model: type[BaseModel], segment: str) -> str | None:
+    normalized = segment.lower()
+    if normalized in model.model_fields:
+        return normalized
+    lookup = {name.upper(): name for name in model.model_fields}
+    return lookup.get(segment.upper())
+
+
+def _resolve_env_path(model: type[BaseModel], raw_key: str) -> list[str] | None:
+    delimiter = Settings.model_config.get("env_nested_delimiter", "__")
+    raw_segments = raw_key.split(delimiter) if delimiter and delimiter in raw_key else [raw_key]
+
+    path: list[str] = []
+    current_model: type[BaseModel] | None = model
+    for index, segment in enumerate(raw_segments):
+        if current_model is None:
+            return None
+        field_name = _field_name(current_model, segment)
+        if field_name is None:
+            return None
+        path.append(field_name)
+        if index == len(raw_segments) - 1:
+            return path
+        field = current_model.model_fields[field_name]
+        current_model = _nested_model(field.annotation)
+    return path
+
+
+def _assign_nested(target: dict[str, Any], path: list[str], value: Any) -> None:
+    cursor = target
+    for segment in path[:-1]:
+        child = cursor.get(segment)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[segment] = child
+        cursor = child
+    cursor[path[-1]] = value
+
+
+def _read_env_overrides() -> dict[str, Any]:
+    prefix = Settings.model_config.get("env_prefix", "")
+    overrides: dict[str, Any] = {}
+    for key, value in os.environ.items():
+        if prefix and not key.startswith(prefix):
+            continue
+        raw_key = key[len(prefix):] if prefix else key
+        path = _resolve_env_path(Settings, raw_key)
+        if path is None:
+            continue
+        _assign_nested(overrides, path, value)
+    return overrides
+
+
+class ConvertXBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = True
+    base_url: str | None = None
+    work_root: Path | None = None
+    allowed_input_roots: list[Path] | None = None
+    allowed_output_roots: list[Path] | None = None
+    temp_root: Path | None = None
+
+    @field_validator("allowed_input_roots", "allowed_output_roots", mode="before")
+    @classmethod
+    def _coerce_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
+
+
+class BackendsConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    convertx: ConvertXBackendConfig = Field(default_factory=ConvertXBackendConfig)
+
+
+class ConvertXRuntimeSettings(BaseModel):
+    enabled: bool = True
+    base_url: str = "http://127.0.0.1:3000"
+    work_root: Path = DEFAULT_CONVERTX_WORK_ROOT
+    allowed_input_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_CONVERTX_WORK_ROOT / "input"]
+    )
+    allowed_output_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_CONVERTX_WORK_ROOT / "output"]
+    )
+    temp_root: Path = DEFAULT_CONVERTX_WORK_ROOT / "tmp"
+    request_timeout_seconds: float = 120.0
+    connect_timeout_seconds: float = 30.0
+    conversion_timeout_seconds: float = 600.0
+    poll_interval_seconds: float = 1.0
+    max_file_bytes: int = 512 * 1024 * 1024
+
+    def ensure_directories(self) -> None:
+        self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
+        for root in [*self.allowed_input_roots, *self.allowed_output_roots, self.temp_root]:
+            root.expanduser().mkdir(parents=True, exist_ok=True)
+
+
 class Settings(BaseSettings):
-    """Runtime settings.
-
-    YAML is loaded explicitly by ``load_settings``; env vars use the
-    ``TOOLHUB_`` prefix and intentionally override YAML values.
-    """
-
     model_config = SettingsConfigDict(
         env_prefix="TOOLHUB_",
         env_nested_delimiter="__",
         extra="ignore",
     )
 
-    convertx_base_url: str = "http://127.0.0.1:3000"
     api_host: str = "127.0.0.1"
     api_port: int = 8765
     mcp_host: str = "127.0.0.1"
@@ -55,27 +175,63 @@ class Settings(BaseSettings):
     conversion_timeout_seconds: float = 600.0
     poll_interval_seconds: float = 1.0
     max_file_bytes: int = 512 * 1024 * 1024
-    allowed_input_roots: list[Path] = Field(default_factory=_default_input_roots)
-    allowed_output_roots: list[Path] = Field(default_factory=_default_output_roots)
-    temp_root: Path = DEFAULT_WORK_ROOT / "tmp"
     auth_token: str | None = None
+    backends: BackendsConfig = Field(default_factory=BackendsConfig)
+
+    # Legacy flat ConvertX config fields, kept for compatibility.
+    convertx_base_url: str | None = None
+    allowed_input_roots: list[Path] | None = None
+    allowed_output_roots: list[Path] | None = None
+    temp_root: Path | None = None
 
     @field_validator("allowed_input_roots", "allowed_output_roots", mode="before")
     @classmethod
-    def _coerce_path_list(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return _split_paths(value)
-        return value
+    def _coerce_legacy_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
+
+    def convertx(self) -> ConvertXRuntimeSettings:
+        backend = self.backends.convertx
+
+        work_root = backend.work_root or DEFAULT_CONVERTX_WORK_ROOT
+        base_url = self.convertx_base_url or "http://127.0.0.1:3000"
+        allowed_input_roots = self.allowed_input_roots or [work_root / "input"]
+        allowed_output_roots = self.allowed_output_roots or [work_root / "output"]
+        temp_root = self.temp_root or work_root / "tmp"
+
+        if backend.base_url is not None:
+            base_url = backend.base_url
+        if backend.allowed_input_roots is not None:
+            allowed_input_roots = backend.allowed_input_roots
+        if backend.allowed_output_roots is not None:
+            allowed_output_roots = backend.allowed_output_roots
+        if backend.temp_root is not None:
+            temp_root = backend.temp_root
+
+        runtime = ConvertXRuntimeSettings(
+            enabled=backend.enabled,
+            base_url=base_url,
+            work_root=work_root,
+            allowed_input_roots=allowed_input_roots,
+            allowed_output_roots=allowed_output_roots,
+            temp_root=temp_root,
+            request_timeout_seconds=self.request_timeout_seconds,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+            conversion_timeout_seconds=self.conversion_timeout_seconds,
+            poll_interval_seconds=self.poll_interval_seconds,
+            max_file_bytes=self.max_file_bytes,
+        )
+        if runtime.enabled:
+            runtime.ensure_directories()
+        return runtime
 
     def ensure_directories(self) -> None:
-        for root in [*self.allowed_input_roots, *self.allowed_output_roots, self.temp_root]:
-            root.expanduser().mkdir(parents=True, exist_ok=True)
+        if self.backends.convertx.enabled:
+            self.convertx().ensure_directories()
 
 
 class YamlSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    convertx_base_url: str | None = None
     api_host: str | None = None
     api_port: int | None = None
     mcp_host: str | None = None
@@ -85,10 +241,17 @@ class YamlSettings(BaseModel):
     conversion_timeout_seconds: float | None = None
     poll_interval_seconds: float | None = None
     max_file_bytes: int | None = None
+    auth_token: str | None = None
+    backends: BackendsConfig | None = None
+    convertx_base_url: str | None = None
     allowed_input_roots: list[Path] | None = None
     allowed_output_roots: list[Path] | None = None
     temp_root: Path | None = None
-    auth_token: str | None = None
+
+    @field_validator("allowed_input_roots", "allowed_output_roots", mode="before")
+    @classmethod
+    def _coerce_legacy_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
 
 
 def _read_yaml_config(config_path: Path) -> dict[str, Any]:
@@ -103,26 +266,13 @@ def _read_yaml_config(config_path: Path) -> dict[str, Any]:
 
 def load_settings(config_path: str | Path | None = None) -> Settings:
     path = Path(
-        config_path
-        or os.getenv("TOOLHUB_CONFIG")
-        or Path.cwd() / "config.yaml"
+        config_path or os.getenv("TOOLHUB_CONFIG") or Path.cwd() / "config.yaml"
     ).expanduser()
     yaml_data = _read_yaml_config(path)
-
-    # BaseSettings applies env values, but init values have priority. Build a
-    # default/env instance first, then let explicitly configured YAML fill only
-    # fields that env did not set.
-    env_settings = Settings()
-    env_names = {f"TOOLHUB_{name.upper()}" for name in Settings.model_fields}
-    env_overrides = {name for name in Settings.model_fields if f"TOOLHUB_{name.upper()}" in os.environ}
-    merged = env_settings.model_dump()
-    for key, value in yaml_data.items():
-        if key not in env_overrides:
-            merged[key] = value
-
+    env_data = _read_env_overrides()
+    merged = _deep_merge(yaml_data, env_data)
     settings = Settings.model_validate(merged)
     settings.ensure_directories()
-    _ = env_names  # Keeps the supported env names obvious during maintenance.
     return settings
 
 

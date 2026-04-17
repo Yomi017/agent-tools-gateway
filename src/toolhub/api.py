@@ -1,31 +1,26 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Callable
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
-from .config import get_settings
-from .models import BatchConvertRequest, ConvertRequest
-from .service import (
-    convert_batch,
-    convert_file,
-    error_payload,
-    health,
-    list_conversion_targets,
-)
-
-app = FastAPI(title="Agent Tools Gateway", version="0.1.0")
+from .config import Settings, get_settings
+from .errors import error_payload
+from .registry import get_enabled_backends
+from .service import health
 
 
-def _auth(authorization: Annotated[str | None, Header()] = None) -> None:
-    token = get_settings().auth_token
-    if not token:
-        return
-    expected = f"Bearer {token}"
-    if authorization != expected:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+def _auth_dependency(token: str | None) -> Callable[[Annotated[str | None, Header()]], None]:
+    def _auth(authorization: Annotated[str | None, Header()] = None) -> None:
+        if not token:
+            return
+        expected = f"Bearer {token}"
+        if authorization != expected:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return _auth
 
 
 def _json(payload: object) -> JSONResponse:
@@ -34,59 +29,25 @@ def _json(payload: object) -> JSONResponse:
     return JSONResponse(payload)
 
 
-@app.get("/health")
-async def health_route(_authorized: None = Depends(_auth)) -> JSONResponse:
-    try:
-        return _json(await health())
-    except Exception as exc:
-        return _json(error_payload(exc))
+def create_app(settings: Settings | None = None) -> FastAPI:
+    runtime = settings or get_settings()
+    auth = _auth_dependency(runtime.auth_token)
+    app = FastAPI(title="Agent Tools Gateway", version="0.1.0")
+
+    @app.get("/health")
+    async def health_route(_authorized: None = Depends(auth)) -> JSONResponse:
+        try:
+            return _json(await health(runtime))
+        except Exception as exc:
+            return _json(error_payload(exc))
+
+    for backend in get_enabled_backends(runtime):
+        backend.register_api(app, auth, _json, runtime)
+
+    return app
 
 
-@app.get("/v1/convertx/targets")
-async def targets_route(
-    input_format: str | None = None,
-    _authorized: None = Depends(_auth),
-) -> JSONResponse:
-    try:
-        return _json(await list_conversion_targets(input_format))
-    except Exception as exc:
-        return _json(error_payload(exc))
-
-
-@app.post("/v1/convertx/convert")
-async def convert_route(
-    request: ConvertRequest,
-    _authorized: None = Depends(_auth),
-) -> JSONResponse:
-    try:
-        result = await convert_file(
-            input_path=request.input_path,
-            output_format=request.output_format,
-            output_dir=request.output_dir,
-            converter=request.converter,
-            overwrite=request.overwrite,
-        )
-        return _json(result)
-    except Exception as exc:
-        return _json(error_payload(exc))
-
-
-@app.post("/v1/convertx/convert-batch")
-async def convert_batch_route(
-    request: BatchConvertRequest,
-    _authorized: None = Depends(_auth),
-) -> JSONResponse:
-    try:
-        result = await convert_batch(
-            input_paths=request.input_paths,
-            output_format=request.output_format,
-            output_dir=request.output_dir,
-            converter=request.converter,
-            overwrite=request.overwrite,
-        )
-        return _json(result)
-    except Exception as exc:
-        return _json(error_payload(exc))
+app = create_app()
 
 
 def main() -> None:

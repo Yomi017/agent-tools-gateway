@@ -17,7 +17,7 @@ services:
       ALLOW_UNAUTHENTICATED: "true"
       AUTO_DELETE_EVERY_N_HOURS: "24"
     volumes:
-      - ./data/convertx:/app/data
+      - ./tools/ConvertX/data:/app/data
 
   toolhub-api:
     build: .
@@ -28,13 +28,15 @@ services:
     ports:
       - "127.0.0.1:8765:8765"
     environment:
-      TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
       TOOLHUB_API_HOST: "0.0.0.0"
-      TOOLHUB_ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input"]'
-      TOOLHUB_ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output"]'
-      TOOLHUB_TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/tmp"
+      TOOLHUB_AUTH_TOKEN: "${TOOLHUB_AUTH_TOKEN:-}"
+      TOOLHUB_BACKENDS__CONVERTX__BASE_URL: "http://convertx:3000"
+      TOOLHUB_BACKENDS__CONVERTX__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work"
+      TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
+      TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
+      TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
     volumes:
-      - ./tool-work:/home/shinku/data/service/tool/agent-tools-gateway/tool-work
+      - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
 
   toolhub-mcp:
     build: .
@@ -45,10 +47,12 @@ services:
     ports:
       - "127.0.0.1:8766:8766"
     environment:
-      TOOLHUB_CONVERTX_BASE_URL: "http://convertx:3000"
       TOOLHUB_MCP_HOST: "0.0.0.0"
-      TOOLHUB_ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/input"]'
-      TOOLHUB_ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tool-work/output"]'
-      TOOLHUB_TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tool-work/tmp"
+      TOOLHUB_AUTH_TOKEN: "${TOOLHUB_AUTH_TOKEN:-}"
+      TOOLHUB_BACKENDS__CONVERTX__BASE_URL: "http://convertx:3000"
+      TOOLHUB_BACKENDS__CONVERTX__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work"
+      TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
+      TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
+      TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
     volumes:
-      - ./tool-work:/home/shinku/data/service/tool/agent-tools-gateway/tool-work
+      - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work

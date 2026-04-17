@@ -5,16 +5,17 @@ import shutil
 import tarfile
 from pathlib import Path, PurePosixPath
 
-from .config import Settings
+from .config import ConvertXRuntimeSettings, Settings
 from .errors import FileTooLargeError, PathNotAllowedError, UnsafeArchiveError
 from .models import OutputFile
 
 
 class PathPolicy:
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.input_roots = [self._root(root) for root in settings.allowed_input_roots]
-        self.output_roots = [self._root(root) for root in settings.allowed_output_roots]
+    def __init__(self, settings: Settings | ConvertXRuntimeSettings) -> None:
+        runtime = settings.convertx() if isinstance(settings, Settings) else settings
+        self.settings = runtime
+        self.input_roots = [self._root(root) for root in runtime.allowed_input_roots]
+        self.output_roots = [self._root(root) for root in runtime.allowed_output_roots]
 
     @staticmethod
     def _root(path: Path) -> Path:

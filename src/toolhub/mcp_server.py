@@ -1,78 +1,75 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import uvicorn
 from fastmcp import FastMCP
+from fastapi.responses import JSONResponse
 
-from .config import get_settings
-from .service import (
-    convert_batch_payload,
-    convert_file_payload,
-    health_payload,
-    list_targets_payload,
-)
-
-mcp = FastMCP("toolhub")
+from .config import Settings, get_settings
+from .registry import get_enabled_backends
+from .service import health_payload
 
 
-@mcp.tool
-async def toolhub_health() -> dict[str, Any]:
-    """Check Agent Tools Gateway and ConvertX reachability."""
-    return await health_payload()
+Scope = dict[str, Any]
+Receive = Callable[[], Awaitable[dict[str, Any]]]
+Send = Callable[[dict[str, Any]], Awaitable[None]]
+AsgiApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 
 
-@mcp.tool
-async def list_conversion_targets(input_format: str | None = None) -> dict[str, Any]:
-    """List ConvertX output formats, optionally filtered by one input extension."""
-    return await list_targets_payload(input_format)
+def create_mcp(settings: Settings | None = None) -> FastMCP:
+    runtime = settings or get_settings()
+    mcp = FastMCP("toolhub")
+
+    @mcp.tool(name="toolhub_health")
+    async def toolhub_health() -> dict[str, Any]:
+        """Check Agent Tools Gateway and enabled backends."""
+        return await health_payload(runtime)
+
+    for backend in get_enabled_backends(runtime):
+        backend.register_mcp(mcp, runtime)
+
+    return mcp
 
 
-@mcp.tool
-async def convert_file(
-    input_path: str,
-    output_format: str,
-    output_dir: str | None = None,
-    converter: str | None = None,
-    overwrite: bool = False,
-) -> dict[str, Any]:
-    """Convert one local file through ConvertX and return local output paths."""
-    return await convert_file_payload(
-        input_path=input_path,
-        output_format=output_format,
-        output_dir=output_dir,
-        converter=converter,
-        overwrite=overwrite,
-    )
+mcp = create_mcp()
 
 
-@mcp.tool
-async def convert_batch(
-    input_paths: list[str],
-    output_format: str,
-    output_dir: str | None = None,
-    converter: str | None = None,
-    overwrite: bool = False,
-) -> dict[str, Any]:
-    """Convert multiple local files with the same extension through ConvertX."""
-    return await convert_batch_payload(
-        input_paths=input_paths,
-        output_format=output_format,
-        output_dir=output_dir,
-        converter=converter,
-        overwrite=overwrite,
-    )
+def _http_auth_app(app: AsgiApp, token: str | None) -> AsgiApp:
+    if not token:
+        return app
+
+    async def _wrapped(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope.get("type") != "http":
+            await app(scope, receive, send)
+            return
+
+        headers = {
+            name.decode("latin-1").lower(): value.decode("latin-1")
+            for name, value in scope.get("headers", [])
+        }
+        if headers.get("authorization") != f"Bearer {token}":
+            await JSONResponse({"detail": "Unauthorized"}, status_code=401)(scope, receive, send)
+            return
+
+        await app(scope, receive, send)
+
+    return _wrapped
+
+
+def create_http_app(settings: Settings | None = None) -> AsgiApp:
+    runtime = settings or get_settings()
+    app = create_mcp(runtime).http_app(transport="streamable-http", path="/mcp")
+    return _http_auth_app(app, runtime.auth_token)
 
 
 def main() -> None:
-    mcp.run()
+    create_mcp(get_settings()).run()
 
 
 def http_main() -> None:
     settings = get_settings()
-    # Use uvicorn directly for the HTTP transport. This avoids FastMCP CLI
-    # process-management quirks while still serving the FastMCP ASGI app at /mcp.
-    app = mcp.http_app(transport="http", path="/mcp")
+    app = create_http_app(settings)
     uvicorn.run(app, host=settings.mcp_host, port=settings.mcp_port)
 
 
