@@ -12,3 +12,4 @@ build/
 config.yaml
 tools/*/work/
 tools/*/data/
+tests/test_image/

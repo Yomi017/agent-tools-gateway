@@ -5,9 +5,10 @@ from typing import Any
 from .config import Settings, get_settings
 from .errors import error_payload
 from .tools.convertx.backend import BACKEND as CONVERTX_BACKEND
+from .tools.webcapture.backend import BACKEND as WEBCAPTURE_BACKEND
 
 
-BACKENDS = (CONVERTX_BACKEND,)
+BACKENDS = (CONVERTX_BACKEND, WEBCAPTURE_BACKEND)
 
 
 def get_enabled_backends(settings: Settings | None = None) -> list[Any]:

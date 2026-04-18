@@ -12,9 +12,12 @@ dependencies = [
   "fastapi>=0.115.0,<1",
   "fastmcp>=2.0.0,<3",
   "httpx>=0.28.0,<1",
+  "markdownify>=1.2.0,<2",
   "pydantic>=2.10.0,<3",
   "pydantic-settings>=2.7.0,<3",
+  "playwright>=1.54.0,<2",
   "pyyaml>=6.0.0,<7",
+  "readability-lxml>=0.8.4.1,<0.9",
   "uvicorn[standard]>=0.34.0,<1",
 ]
 
@@ -25,6 +28,7 @@ dev = [
 ]
 
 [project.scripts]
+tool-call = "toolhub.cli:main"
 toolhub-api = "toolhub.api:main"
 toolhub-mcp = "toolhub.mcp_server:main"
 toolhub-mcp-http = "toolhub.mcp_server:http_main"
