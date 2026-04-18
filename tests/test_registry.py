@@ -21,6 +21,12 @@ def test_registry_discovers_enabled_convertx_backend(settings) -> None:
     assert [backend.key for backend in backends] == ["convertx"]
 
 
+def test_registry_discovers_enabled_webcapture_backend(webcapture_settings) -> None:
+    backends = get_enabled_backends(webcapture_settings)
+
+    assert [backend.key for backend in backends] == ["convertx", "webcapture"]
+
+
 def test_registry_skips_disabled_backend() -> None:
     settings = Settings(backends={"convertx": {"enabled": False}})
 
@@ -59,6 +65,19 @@ def test_mcp_registers_namespaced_and_legacy_convertx_tools(settings) -> None:
     }.issubset(names)
 
 
+def test_mcp_registers_webcapture_tools(webcapture_settings) -> None:
+    mcp = create_mcp(webcapture_settings)
+    names = set(mcp._tool_manager._tools)
+
+    assert {
+        "webcapture_health",
+        "webcapture_check_url",
+        "webcapture_capture_url",
+        "check_webpage_capture",
+        "capture_webpage",
+    }.issubset(names)
+
+
 @pytest.mark.asyncio
 async def test_health_route_aggregates_backend_health(settings, monkeypatch) -> None:
     async def fake_health(_settings=None):
@@ -76,6 +95,60 @@ async def test_health_route_aggregates_backend_health(settings, monkeypatch) -> 
     payload = json.loads(response.body)
     assert payload["ok"] is True
     assert payload["backends"]["convertx"]["reachable"] is True
+
+
+@pytest.mark.asyncio
+async def test_health_route_includes_webcapture_backend(webcapture_settings, monkeypatch) -> None:
+    async def fake_health(_settings=None):
+        return HealthResponse(
+            backends={
+                "convertx": {"reachable": True, "base_url": "http://convertx.test"},
+                "webcapture": {
+                    "reachable": True,
+                    "base_url": "http://browserless.test",
+                    "isAvailable": True,
+                    "running": 0,
+                    "queued": 0,
+                },
+            }
+        )
+
+    monkeypatch.setattr("toolhub.api.health", fake_health)
+
+    app = create_app(webcapture_settings)
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/health")
+    response = await route.endpoint()
+
+    payload = json.loads(response.body)
+    assert payload["ok"] is True
+    assert payload["backends"]["webcapture"]["isAvailable"] is True
+
+
+@pytest.mark.asyncio
+async def test_health_route_includes_unreachable_webcapture_backend(webcapture_settings, monkeypatch) -> None:
+    async def fake_health(_settings=None):
+        return HealthResponse(
+            backends={
+                "convertx": {"reachable": True, "base_url": "http://convertx.test"},
+                "webcapture": {
+                    "reachable": False,
+                    "base_url": "http://browserless.test",
+                    "status_code": 401,
+                    "body_preview": "Unauthorized",
+                },
+            }
+        )
+
+    monkeypatch.setattr("toolhub.api.health", fake_health)
+
+    app = create_app(webcapture_settings)
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/health")
+    response = await route.endpoint()
+
+    payload = json.loads(response.body)
+    assert payload["ok"] is True
+    assert payload["backends"]["webcapture"]["reachable"] is False
+    assert payload["backends"]["webcapture"]["status_code"] == 401
 
 
 @pytest.mark.asyncio

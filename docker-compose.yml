@@ -19,12 +19,25 @@ services:
     volumes:
       - ./tools/ConvertX/data:/app/data
 
+  browserless:
+    image: ghcr.io/browserless/chromium:v2.38.2
+    restart: unless-stopped
+    shm_size: "2g"
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
+      CONCURRENT: "2"
+      QUEUED: "8"
+      HEALTH: "true"
+
   toolhub-api:
     build: .
     restart: unless-stopped
     command: ["toolhub-api"]
     depends_on:
       - convertx
+      - browserless
     ports:
       - "127.0.0.1:8765:8765"
     environment:
@@ -35,8 +48,15 @@ services:
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
       TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+      TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
+      TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
+      TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
+      TOOLHUB_BACKENDS__WEBCAPTURE__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work"
+      TOOLHUB_BACKENDS__WEBCAPTURE__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"]'
+      TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
+      - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work
 
   toolhub-mcp:
     build: .
@@ -44,6 +64,7 @@ services:
     command: ["toolhub-mcp-http"]
     depends_on:
       - convertx
+      - browserless
     ports:
       - "127.0.0.1:8766:8766"
     environment:
@@ -54,5 +75,12 @@ services:
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
       TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+      TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
+      TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
+      TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
+      TOOLHUB_BACKENDS__WEBCAPTURE__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work"
+      TOOLHUB_BACKENDS__WEBCAPTURE__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"]'
+      TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
+      - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work

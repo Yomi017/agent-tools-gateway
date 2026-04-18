@@ -20,3 +20,17 @@ backends:
     allowed_output_roots:
       - "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"
     temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+  webcapture:
+    enabled: false
+    base_url: "http://127.0.0.1:3001"
+    token: "change-me-browserless-token"
+    work_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work"
+    allowed_output_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"
+    temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
+    browser_timeout_seconds: 120
+    post_load_wait_ms: 1000
+    viewport_width: 1440
+    viewport_height: 1024
+    pdf_format: "A4"
+    block_private_networks: true

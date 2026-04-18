@@ -14,6 +14,13 @@ def _paths(root: Path) -> tuple[Path, Path, Path, Path]:
     return work_root, input_root, output_root, temp_root
 
 
+def _webcapture_paths(root: Path) -> tuple[Path, Path, Path]:
+    work_root = root / "tools" / "WebCapture" / "work"
+    output_root = work_root / "output"
+    temp_root = work_root / "tmp"
+    return work_root, output_root, temp_root
+
+
 def test_backend_scoped_convertx_config_is_used(tmp_path: Path) -> None:
     work_root, input_root, output_root, temp_root = _paths(tmp_path)
     settings = Settings(
@@ -186,3 +193,94 @@ def test_env_path_lists_accept_json_style_strings(monkeypatch, tmp_path: Path) -
 
     assert runtime.allowed_input_roots == [input_root]
     assert runtime.allowed_output_roots == [output_root]
+
+
+def test_webcapture_backend_defaults_to_disabled() -> None:
+    settings = Settings()
+
+    runtime = settings.webcapture()
+
+    assert runtime.enabled is False
+
+
+def test_backend_scoped_webcapture_config_is_used(tmp_path: Path) -> None:
+    work_root, output_root, temp_root = _webcapture_paths(tmp_path)
+    settings = Settings(
+        backends={
+            "webcapture": {
+                "enabled": True,
+                "base_url": "http://browserless.test",
+                "token": "secret-token",
+                "work_root": work_root,
+                "allowed_output_roots": [output_root],
+                "temp_root": temp_root,
+                "browser_timeout_seconds": 90,
+                "post_load_wait_ms": 250,
+                "viewport_width": 1200,
+                "viewport_height": 900,
+                "pdf_format": "Letter",
+                "block_private_networks": False,
+            }
+        }
+    )
+
+    runtime = settings.webcapture()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://browserless.test"
+    assert runtime.token == "secret-token"
+    assert runtime.work_root == work_root
+    assert runtime.allowed_output_roots == [output_root]
+    assert runtime.temp_root == temp_root
+    assert runtime.browser_timeout_seconds == 90
+    assert runtime.post_load_wait_ms == 250
+    assert runtime.viewport_width == 1200
+    assert runtime.viewport_height == 900
+    assert runtime.pdf_format == "Letter"
+    assert runtime.block_private_networks is False
+
+
+def test_load_settings_reads_webcapture_env(monkeypatch, tmp_path: Path) -> None:
+    work_root, output_root, temp_root = _webcapture_paths(tmp_path / "env")
+    config_path = tmp_path / "missing.yaml"
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED", "true")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL", "http://browserless.test")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN", "secret-token")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__WORK_ROOT", str(work_root))
+    monkeypatch.setenv(
+        "TOOLHUB_BACKENDS__WEBCAPTURE__ALLOWED_OUTPUT_ROOTS",
+        f'["{output_root}"]',
+    )
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT", str(temp_root))
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WEBCAPTURE__VIEWPORT_WIDTH", "1600")
+
+    settings = load_settings(config_path)
+    runtime = settings.webcapture()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://browserless.test"
+    assert runtime.token == "secret-token"
+    assert runtime.work_root == work_root
+    assert runtime.allowed_output_roots == [output_root]
+    assert runtime.temp_root == temp_root
+    assert runtime.viewport_width == 1600
+
+
+def test_webcapture_enabled_creates_directories(tmp_path: Path) -> None:
+    work_root, output_root, temp_root = _webcapture_paths(tmp_path / "dirs")
+    settings = Settings(
+        backends={
+            "webcapture": {
+                "enabled": True,
+                "work_root": work_root,
+                "allowed_output_roots": [output_root],
+                "temp_root": temp_root,
+            }
+        }
+    )
+
+    settings.ensure_directories()
+
+    assert work_root.is_dir()
+    assert output_root.is_dir()
+    assert temp_root.is_dir()

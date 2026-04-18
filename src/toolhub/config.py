@@ -16,6 +16,8 @@ DEFAULT_GATEWAY_ROOT = Path(
 DEFAULT_TOOLS_ROOT = DEFAULT_GATEWAY_ROOT / "tools"
 DEFAULT_CONVERTX_HOME = DEFAULT_TOOLS_ROOT / "ConvertX"
 DEFAULT_CONVERTX_WORK_ROOT = DEFAULT_CONVERTX_HOME / "work"
+DEFAULT_WEBCAPTURE_HOME = DEFAULT_TOOLS_ROOT / "WebCapture"
+DEFAULT_WEBCAPTURE_WORK_ROOT = DEFAULT_WEBCAPTURE_HOME / "work"
 
 
 def _split_paths(value: str) -> list[str]:
@@ -130,10 +132,33 @@ class ConvertXBackendConfig(BaseModel):
         return _coerce_path_list(value)
 
 
+class WebCaptureBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    base_url: str | None = None
+    token: str | None = None
+    work_root: Path | None = None
+    allowed_output_roots: list[Path] | None = None
+    temp_root: Path | None = None
+    browser_timeout_seconds: float | None = None
+    post_load_wait_ms: int | None = None
+    viewport_width: int | None = None
+    viewport_height: int | None = None
+    pdf_format: str | None = None
+    block_private_networks: bool | None = None
+
+    @field_validator("allowed_output_roots", mode="before")
+    @classmethod
+    def _coerce_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
+
+
 class BackendsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     convertx: ConvertXBackendConfig = Field(default_factory=ConvertXBackendConfig)
+    webcapture: WebCaptureBackendConfig = Field(default_factory=WebCaptureBackendConfig)
 
 
 class ConvertXRuntimeSettings(BaseModel):
@@ -156,6 +181,30 @@ class ConvertXRuntimeSettings(BaseModel):
     def ensure_directories(self) -> None:
         self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
         for root in [*self.allowed_input_roots, *self.allowed_output_roots, self.temp_root]:
+            root.expanduser().mkdir(parents=True, exist_ok=True)
+
+
+class WebCaptureRuntimeSettings(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:3001"
+    token: str | None = None
+    work_root: Path = DEFAULT_WEBCAPTURE_WORK_ROOT
+    allowed_output_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_WEBCAPTURE_WORK_ROOT / "output"]
+    )
+    temp_root: Path = DEFAULT_WEBCAPTURE_WORK_ROOT / "tmp"
+    request_timeout_seconds: float = 120.0
+    connect_timeout_seconds: float = 30.0
+    browser_timeout_seconds: float = 120.0
+    post_load_wait_ms: int = 1000
+    viewport_width: int = 1440
+    viewport_height: int = 1024
+    pdf_format: str = "A4"
+    block_private_networks: bool = True
+
+    def ensure_directories(self) -> None:
+        self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
+        for root in [*self.allowed_output_roots, self.temp_root]:
             root.expanduser().mkdir(parents=True, exist_ok=True)
 
 
@@ -224,9 +273,42 @@ class Settings(BaseSettings):
             runtime.ensure_directories()
         return runtime
 
+    def webcapture(self) -> WebCaptureRuntimeSettings:
+        backend = self.backends.webcapture
+
+        work_root = backend.work_root or DEFAULT_WEBCAPTURE_WORK_ROOT
+        allowed_output_roots = backend.allowed_output_roots or [work_root / "output"]
+        temp_root = backend.temp_root or work_root / "tmp"
+
+        runtime = WebCaptureRuntimeSettings(
+            enabled=backend.enabled,
+            base_url=backend.base_url or "http://127.0.0.1:3001",
+            token=backend.token,
+            work_root=work_root,
+            allowed_output_roots=allowed_output_roots,
+            temp_root=temp_root,
+            request_timeout_seconds=self.request_timeout_seconds,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+            browser_timeout_seconds=backend.browser_timeout_seconds or 120.0,
+            post_load_wait_ms=backend.post_load_wait_ms or 1000,
+            viewport_width=backend.viewport_width or 1440,
+            viewport_height=backend.viewport_height or 1024,
+            pdf_format=backend.pdf_format or "A4",
+            block_private_networks=(
+                backend.block_private_networks
+                if backend.block_private_networks is not None
+                else True
+            ),
+        )
+        if runtime.enabled:
+            runtime.ensure_directories()
+        return runtime
+
     def ensure_directories(self) -> None:
         if self.backends.convertx.enabled:
             self.convertx().ensure_directories()
+        if self.backends.webcapture.enabled:
+            self.webcapture().ensure_directories()
 
 
 class YamlSettings(BaseModel):

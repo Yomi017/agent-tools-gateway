@@ -50,6 +50,22 @@ class FileTooLargeError(ToolhubError):
     code = "file_too_large"
 
 
+class InvalidUrlError(ToolhubError):
+    code = "invalid_url"
+
+
+class UrlNotAllowedError(ToolhubError):
+    code = "url_not_allowed"
+
+
+class InvalidFilenameError(ToolhubError):
+    code = "invalid_filename"
+
+
+class OutputExistsError(ToolhubError):
+    code = "output_exists"
+
+
 class FormatNotSupportedError(ToolhubError):
     code = "format_not_supported"
 

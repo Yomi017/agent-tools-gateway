@@ -4,15 +4,18 @@ import argparse
 import json
 import os
 import sys
+from collections import Counter
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
+from urllib.parse import urlsplit
 
 import httpx
 
 from .tools.convertx.client import normalize_format
+from .tools.webcapture.models import normalize_capture_format, normalize_wait_until
 
 
 DEFAULT_API_URL = "http://127.0.0.1:8765"
@@ -43,6 +46,12 @@ class CliError(Exception):
 @dataclass(frozen=True)
 class CommandContext:
     client_factory: ClientFactory
+
+
+@dataclass(frozen=True)
+class InputSelection:
+    source_kind: str
+    paths: list[Path]
 
 
 class JsonArgumentParser(argparse.ArgumentParser):
@@ -78,6 +87,20 @@ def _parse_timeout(value: str) -> float:
     return timeout
 
 
+def _parse_capture_output_format(value: str) -> str:
+    try:
+        return normalize_capture_format(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _parse_wait_until(value: str) -> str:
+    try:
+        return normalize_wait_until(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _print_json(payload: JsonObject, stdout: TextIO) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=stdout)
 
@@ -101,35 +124,73 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _resolve_input_path(raw_path: str, input_format: str) -> Path:
+def _validate_input_file(path: Path, input_format: str, *, source_path: str) -> Path:
+    if not path.is_file():
+        raise CliError(
+            "input_not_file",
+            f"Input path is not a regular file: {source_path}",
+            details={"path": str(path)},
+        )
+
+    actual_format = normalize_format(path.suffix)
+    if actual_format != input_format:
+        raise CliError(
+            "input_format_mismatch",
+            f"Input file extension is {actual_format}, not {input_format}.",
+            details={
+                "path": str(path),
+                "input_format": input_format,
+                "actual_format": actual_format,
+            },
+        )
+    return path
+
+
+def _resolve_input_selection(raw_path: str, input_format: str) -> InputSelection:
     path = Path(raw_path).expanduser()
     try:
         resolved = path.resolve(strict=True)
     except FileNotFoundError as exc:
         raise CliError(
             "input_not_found",
-            f"Input file does not exist: {raw_path}",
+            f"Input path does not exist: {raw_path}",
             details={"path": raw_path},
         ) from exc
-    if not resolved.is_file():
+
+    if resolved.is_file():
+        return InputSelection(
+            source_kind="file",
+            paths=[_validate_input_file(resolved, input_format, source_path=raw_path)],
+        )
+
+    if not resolved.is_dir():
         raise CliError(
-            "input_not_file",
-            f"Input path is not a regular file: {raw_path}",
+            "input_not_file_or_dir",
+            f"Input path is neither a regular file nor a directory: {raw_path}",
             details={"path": str(resolved)},
         )
 
-    actual_format = normalize_format(resolved.suffix)
-    if actual_format != input_format:
+    files = sorted(
+        child.resolve(strict=True)
+        for child in resolved.iterdir()
+        if child.is_file() and normalize_format(child.suffix) == input_format
+    )
+    if not files:
         raise CliError(
-            "input_format_mismatch",
-            f"Input file extension is {actual_format}, not {input_format}.",
-            details={
-                "path": str(resolved),
-                "input_format": input_format,
-                "actual_format": actual_format,
-            },
+            "input_dir_empty",
+            f"No .{input_format} files were found in directory: {raw_path}",
+            details={"path": str(resolved), "input_format": input_format},
         )
-    return resolved
+
+    duplicates = sorted(name for name, count in Counter(path.name for path in files).items() if count > 1)
+    if duplicates:
+        raise CliError(
+            "duplicate_input_filenames",
+            "Batch conversion requires unique filenames within the input directory.",
+            details={"path": str(resolved), "duplicate_filenames": duplicates},
+        )
+
+    return InputSelection(source_kind="directory", paths=files)
 
 
 def _resolve_output_dir(raw_path: str) -> Path:
@@ -142,6 +203,28 @@ def _resolve_output_dir(raw_path: str) -> Path:
             details={"path": str(resolved)},
         )
     return resolved
+
+
+def _resolve_capture_url(raw_url: str) -> str:
+    normalized = raw_url.strip()
+    if not normalized:
+        raise CliError("invalid_url", "URL is required.", details={"url": raw_url})
+    parts = urlsplit(normalized)
+    try:
+        _port = parts.port
+    except ValueError as exc:
+        raise CliError(
+            "invalid_url",
+            "URL contains an invalid port.",
+            details={"url": raw_url},
+        ) from exc
+    if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+        raise CliError(
+            "invalid_url",
+            "URL must use http or https and include a hostname.",
+            details={"url": raw_url},
+        )
+    return normalized
 
 
 def _response_json(response: httpx.Response, action: str) -> JsonObject:
@@ -237,7 +320,7 @@ def _select_target(
 def _run_convertx(args: argparse.Namespace, context: CommandContext) -> JsonObject:
     input_format = normalize_format(args.input_format)
     output_format = normalize_format(args.output_format)
-    input_path = _resolve_input_path(args.input_path, input_format)
+    selection = _resolve_input_selection(args.input_path, input_format)
     output_dir = _resolve_output_dir(args.output_dir)
 
     with context.client_factory(args.api_url, args.timeout, _auth_headers()) as client:
@@ -254,21 +337,40 @@ def _run_convertx(args: argparse.Namespace, context: CommandContext) -> JsonObje
         )
 
         if args.check:
-            return {
+            payload: JsonObject = {
                 "ok": True,
                 "backend": "convertx",
                 "check": True,
+                "mode": selection.source_kind,
                 "input_format": input_format,
-                "input_path": str(input_path),
                 "output_format": output_format,
                 "output_dir": str(output_dir),
                 "overwrite": args.overwrite,
                 "converter": args.converter,
+                "input_count": len(selection.paths),
                 "selected_target": selected,
             }
+            if selection.source_kind == "file":
+                payload["input_path"] = str(selection.paths[0])
+            else:
+                payload["input_paths"] = [str(path) for path in selection.paths]
+            return payload
 
-        request_payload: JsonObject = {
-            "input_path": str(input_path),
+        if selection.source_kind == "file":
+            request_payload: JsonObject = {
+                "input_path": str(selection.paths[0]),
+                "output_format": output_format,
+                "output_dir": str(output_dir),
+                "overwrite": args.overwrite,
+            }
+            if args.converter:
+                request_payload["converter"] = args.converter
+
+            convert_response = client.post("/v1/convertx/convert", json=request_payload)
+            return _response_json(convert_response, "convert file")
+
+        request_payload = {
+            "input_paths": [str(path) for path in selection.paths],
             "output_format": output_format,
             "output_dir": str(output_dir),
             "overwrite": args.overwrite,
@@ -276,14 +378,36 @@ def _run_convertx(args: argparse.Namespace, context: CommandContext) -> JsonObje
         if args.converter:
             request_payload["converter"] = args.converter
 
-        convert_response = client.post("/v1/convertx/convert", json=request_payload)
-        return _response_json(convert_response, "convert file")
+        convert_response = client.post("/v1/convertx/convert-batch", json=request_payload)
+        return _response_json(convert_response, "convert batch")
+
+
+def _run_webcapture(args: argparse.Namespace, context: CommandContext) -> JsonObject:
+    request_payload: JsonObject = {
+        "url": _resolve_capture_url(args.url),
+        "output_format": args.output_format,
+        "output_dir": str(_resolve_output_dir(args.output_dir)),
+        "overwrite": args.overwrite,
+    }
+    if args.name:
+        request_payload["filename_stem"] = args.name
+    if args.wait_until:
+        request_payload["wait_until"] = args.wait_until
+    if args.full_page is not None:
+        request_payload["full_page"] = args.full_page
+
+    endpoint = "/v1/webcapture/check" if args.check else "/v1/webcapture/capture"
+    action = "validate webcapture request" if args.check else "capture webpage"
+
+    with context.client_factory(args.api_url, args.timeout, _auth_headers()) as client:
+        response = client.post(endpoint, json=request_payload)
+        return _response_json(response, action)
 
 
 def _add_convertx_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     parser = subparsers.add_parser(
         "convertx",
-        help="Convert one file through the local ConvertX gateway.",
+        help="Convert one file or one flat directory of matching files through the local ConvertX gateway.",
     )
     parser.add_argument("input_format")
     parser.add_argument("input_path")
@@ -313,6 +437,48 @@ def _add_convertx_parser(subparsers: argparse._SubParsersAction[argparse.Argumen
     parser.set_defaults(handler=_run_convertx)
 
 
+def _add_webcapture_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    parser = subparsers.add_parser(
+        "webcapture",
+        help="Capture one webpage into pdf, png, or markdown through the local webcapture backend.",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate URL and output planning without capturing.",
+    )
+    parser.add_argument(
+        "--name",
+        help="Optional output filename stem without extension.",
+    )
+    parser.add_argument(
+        "--wait-until",
+        type=_parse_wait_until,
+        help="Navigation readiness event for the page load.",
+    )
+    parser.add_argument(
+        "--full-page",
+        type=_parse_bool,
+        help="Whether png screenshots should capture the full scrollable page.",
+    )
+    parser.add_argument("url")
+    parser.add_argument("output_format", type=_parse_capture_output_format)
+    parser.add_argument("output_dir")
+    parser.add_argument("overwrite", type=_parse_bool)
+    parser.add_argument(
+        "--api-url",
+        default=os.getenv("TOOLHUB_API_URL", DEFAULT_API_URL),
+        help=f"Toolhub REST API URL. Defaults to TOOLHUB_API_URL or {DEFAULT_API_URL}.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=_parse_timeout,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"HTTP timeout in seconds. Defaults to {DEFAULT_TIMEOUT_SECONDS:g}.",
+    )
+    parser.set_defaults(handler=_run_webcapture)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = JsonArgumentParser(
         prog="tool-call",
@@ -320,6 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="tool", required=True)
     _add_convertx_parser(subparsers)
+    _add_webcapture_parser(subparsers)
     return parser
 
 
