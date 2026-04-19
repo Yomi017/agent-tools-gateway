@@ -24,10 +24,13 @@ tools/WebCapture/
 - Real smoke testing should call `POST /v1/webcapture/check` for a public URL,
   such as `https://example.com`, and confirm that the response includes
   `planned_output_path` instead of `resolution_failed`.
-- If containers need to reach the public web through a host proxy, pass
+- `toolhub-api` and `toolhub-mcp` can inherit
   `TOOLHUB_OUTBOUND_HTTP_PROXY`, `TOOLHUB_OUTBOUND_HTTPS_PROXY`, and
-  `TOOLHUB_OUTBOUND_NO_PROXY` into compose. Otherwise the stack runs in direct
-  mode by default.
+  `TOOLHUB_OUTBOUND_NO_PROXY` when the gateway itself needs a host proxy.
+- `browserless` intentionally stays in direct-egress mode by default. This
+  avoids Chromium startup/navigation failures such as
+  `net::ERR_PROXY_CONNECTION_FAILED` when the host bridge proxy is only meant
+  for the API/MCP containers.
 - Public web capture can also use container-scoped DNS instead of the host's
   current WSL DNS path. Compose reads
   `TOOLHUB_WEBCAPTURE_DNS_PRIMARY` and `TOOLHUB_WEBCAPTURE_DNS_SECONDARY`,

@@ -38,7 +38,7 @@ Browserless token：
 export BROWSERLESS_TOKEN="change-me-browserless-token"
 ```
 
-如果容器需要通过宿主机代理出网，可以显式传入 outbound proxy 环境变量：
+如果 gateway 侧容器需要通过宿主机代理出网，可以显式传入 outbound proxy 环境变量：
 
 ```bash
 export TOOLHUB_OUTBOUND_HTTP_PROXY="http://host.docker.internal:17990"
@@ -46,13 +46,17 @@ export TOOLHUB_OUTBOUND_HTTPS_PROXY="http://host.docker.internal:17990"
 export TOOLHUB_OUTBOUND_NO_PROXY="localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal"
 ```
 
+这组 `TOOLHUB_OUTBOUND_*` 现在只给 `toolhub-api` 和 `toolhub-mcp` 使用。
+`browserless` 默认保持直连公网，不继承这组代理，避免 Chromium 在抓网页时出现
+`net::ERR_PROXY_CONNECTION_FAILED`。
+
 当前这台机器推荐直接用 `17990`。它是 WSL 到 Windows 代理的桥：
 
 ```text
 0.0.0.0:17990 -> 127.0.0.1:7890
 ```
 
-`/home/shinku/data/setup.sh` 会自动给 `agent-tools-gateway` 导出这组 `TOOLHUB_OUTBOUND_*` 变量，所以正常情况下不需要每次手工设置。
+`/home/shinku/data/setup.sh` 会自动给 `agent-tools-gateway` 导出这组 `TOOLHUB_OUTBOUND_*` 变量，所以正常情况下不需要每次手工设置；compose 会确保 `browserless` 不继承它们。
 
 如果只想优先恢复 WebCapture 的公网域名解析，而不依赖宿主机当前的 DNS 链路，可以给 `browserless`、`toolhub-api`、`toolhub-mcp` 显式传入独立 DNS：
 
@@ -118,6 +122,7 @@ curl http://127.0.0.1:8765/health
 - 这两个检查都不代表“公网网页抓取已可用”。
 - `webcapture/check` 更适合作为可选的深度 smoke，不应该作为每次启动脚本的硬失败条件。
 - WebCapture 现在默认走容器独立 DNS，不再依赖宿主机当前的 WSL DNS 是否可用。
+- WebCapture 真正抓网页时，`browserless` 默认直连公网；`TOOLHUB_OUTBOUND_*` 只影响 `toolhub-api` / `toolhub-mcp`。
 
 启用 token 后：
 
