@@ -1,3 +1,22 @@
+x-proxy-env: &proxy_env
+  HTTP_PROXY: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
+  HTTPS_PROXY: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
+  ALL_PROXY: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
+  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  http_proxy: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
+  https_proxy: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
+  all_proxy: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
+  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+
+x-host-gateway: &host_gateway
+  - "host.docker.internal:host-gateway"
+
+x-webcapture-dns: &webcapture_dns
+  dns:
+    - "${TOOLHUB_WEBCAPTURE_DNS_PRIMARY:-223.5.5.5}"
+    - "${TOOLHUB_WEBCAPTURE_DNS_SECONDARY:-119.29.29.29}"
+  dns_search: []
+
 services:
   convertx:
     image: ghcr.io/c4illin/convertx:v0.17.0
@@ -20,11 +39,13 @@ services:
       - ./tools/ConvertX/data:/app/data
 
   browserless:
+    <<: *webcapture_dns
     image: ghcr.io/browserless/chromium:v2.38.2
     restart: unless-stopped
     shm_size: "2g"
     ports:
       - "127.0.0.1:3001:3000"
+    extra_hosts: *host_gateway
     environment:
       TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
       CONCURRENT: "2"
@@ -32,6 +53,7 @@ services:
       HEALTH: "true"
 
   toolhub-api:
+    <<: *webcapture_dns
     build: .
     restart: unless-stopped
     command: ["toolhub-api"]
@@ -40,7 +62,9 @@ services:
       - browserless
     ports:
       - "127.0.0.1:8765:8765"
+    extra_hosts: *host_gateway
     environment:
+      <<: *proxy_env
       TOOLHUB_API_HOST: "0.0.0.0"
       TOOLHUB_AUTH_TOKEN: "${TOOLHUB_AUTH_TOKEN:-}"
       TOOLHUB_BACKENDS__CONVERTX__BASE_URL: "http://convertx:3000"
@@ -59,6 +83,7 @@ services:
       - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work
 
   toolhub-mcp:
+    <<: *webcapture_dns
     build: .
     restart: unless-stopped
     command: ["toolhub-mcp-http"]
@@ -67,7 +92,9 @@ services:
       - browserless
     ports:
       - "127.0.0.1:8766:8766"
+    extra_hosts: *host_gateway
     environment:
+      <<: *proxy_env
       TOOLHUB_MCP_HOST: "0.0.0.0"
       TOOLHUB_AUTH_TOKEN: "${TOOLHUB_AUTH_TOKEN:-}"
       TOOLHUB_BACKENDS__CONVERTX__BASE_URL: "http://convertx:3000"
