@@ -80,3 +80,7 @@ class UpstreamError(ToolhubError):
 
 class UnsafeArchiveError(ToolhubError):
     code = "unsafe_archive"
+
+
+class CaptureLimitError(ToolhubError):
+    code = "capture_limit_exceeded"

@@ -147,6 +147,8 @@ class WebCaptureBackendConfig(BaseModel):
     viewport_height: int | None = None
     pdf_format: str | None = None
     block_private_networks: bool | None = None
+    max_capture_bytes: int | None = None
+    max_full_page_height_px: int | None = None
 
     @field_validator("allowed_output_roots", mode="before")
     @classmethod
@@ -201,6 +203,8 @@ class WebCaptureRuntimeSettings(BaseModel):
     viewport_height: int = 1024
     pdf_format: str = "A4"
     block_private_networks: bool = True
+    max_capture_bytes: int = 64 * 1024 * 1024
+    max_full_page_height_px: int = 20_000
 
     def ensure_directories(self) -> None:
         self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
@@ -289,15 +293,33 @@ class Settings(BaseSettings):
             temp_root=temp_root,
             request_timeout_seconds=self.request_timeout_seconds,
             connect_timeout_seconds=self.connect_timeout_seconds,
-            browser_timeout_seconds=backend.browser_timeout_seconds or 120.0,
-            post_load_wait_ms=backend.post_load_wait_ms or 1000,
-            viewport_width=backend.viewport_width or 1440,
-            viewport_height=backend.viewport_height or 1024,
-            pdf_format=backend.pdf_format or "A4",
+            browser_timeout_seconds=(
+                backend.browser_timeout_seconds
+                if backend.browser_timeout_seconds is not None
+                else 120.0
+            ),
+            post_load_wait_ms=(
+                backend.post_load_wait_ms if backend.post_load_wait_ms is not None else 1000
+            ),
+            viewport_width=backend.viewport_width if backend.viewport_width is not None else 1440,
+            viewport_height=(
+                backend.viewport_height if backend.viewport_height is not None else 1024
+            ),
+            pdf_format=backend.pdf_format if backend.pdf_format is not None else "A4",
             block_private_networks=(
                 backend.block_private_networks
                 if backend.block_private_networks is not None
                 else True
+            ),
+            max_capture_bytes=(
+                backend.max_capture_bytes
+                if backend.max_capture_bytes is not None
+                else 64 * 1024 * 1024
+            ),
+            max_full_page_height_px=(
+                backend.max_full_page_height_px
+                if backend.max_full_page_height_px is not None
+                else 20_000
             ),
         )
         if runtime.enabled:

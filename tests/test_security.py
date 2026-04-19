@@ -4,6 +4,7 @@ import os
 import socket
 from pathlib import Path
 
+import playwright.async_api as playwright_async_api
 import pytest
 
 from toolhub.errors import (
@@ -214,3 +215,102 @@ async def test_playwright_session_blocks_resolution_failure(webcapture_settings)
     assert aborted == ["blockedbyclient"]
     assert session.blocked_requests[0].reason
     assert "resolution_failed" in session.blocked_requests[0].reason
+
+
+@pytest.mark.asyncio
+async def test_playwright_session_blocks_private_websocket_request(webcapture_settings) -> None:
+    runtime = webcapture_settings.webcapture()
+    session = PlaywrightCaptureSession(
+        runtime,
+        resolver=lambda hostname, port: ["127.0.0.1"] if hostname == "evil.test" else ["93.184.216.34"],
+    )
+    closed: list[tuple[int | None, str | None]] = []
+    connected: list[bool] = []
+
+    class FakeWebSocketRoute:
+        url = "ws://evil.test/socket"
+
+        async def close(self, *, code: int | None = None, reason: str | None = None) -> None:
+            closed.append((code, reason))
+
+        async def connect_to_server(self) -> None:
+            connected.append(True)
+
+    await session._route_web_socket(FakeWebSocketRoute())
+
+    assert closed == [(1008, "Blocked by web capture policy")]
+    assert connected == []
+    assert session.blocked_requests[0].resource_type == "websocket"
+    assert session.blocked_requests[0].reason == "loopback"
+
+
+@pytest.mark.asyncio
+async def test_playwright_session_context_blocks_service_workers_and_routes_websockets(
+    webcapture_settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = webcapture_settings.webcapture()
+    calls: dict[str, object] = {}
+
+    class FakeContext:
+        async def route(self, pattern, handler) -> None:
+            calls["route_pattern"] = pattern
+            calls["route_handler"] = handler
+
+        async def route_web_socket(self, pattern, handler) -> None:
+            calls["ws_pattern"] = pattern
+            calls["ws_handler"] = handler
+
+        async def new_page(self) -> object:
+            page = object()
+            calls["page"] = page
+            return page
+
+        async def close(self) -> None:
+            calls["context_closed"] = True
+
+    class FakeBrowser:
+        async def new_context(self, **kwargs) -> FakeContext:
+            calls["new_context_kwargs"] = kwargs
+            return FakeContext()
+
+        async def close(self) -> None:
+            calls["browser_closed"] = True
+
+    class FakeChromium:
+        async def connect(self, endpoint: str, timeout: int) -> FakeBrowser:
+            calls["endpoint"] = endpoint
+            calls["timeout"] = timeout
+            return FakeBrowser()
+
+    class FakePlaywright:
+        chromium = FakeChromium()
+
+        async def stop(self) -> None:
+            calls["playwright_stopped"] = True
+
+    class FakeAsyncPlaywrightManager:
+        async def start(self) -> FakePlaywright:
+            calls["started"] = True
+            return FakePlaywright()
+
+    monkeypatch.setattr(
+        playwright_async_api,
+        "async_playwright",
+        lambda: FakeAsyncPlaywrightManager(),
+    )
+
+    session = PlaywrightCaptureSession(runtime, resolver=lambda hostname, port: ["93.184.216.34"])
+
+    async with session:
+        pass
+
+    assert calls["new_context_kwargs"] == {
+        "viewport": {"width": runtime.viewport_width, "height": runtime.viewport_height},
+        "service_workers": "block",
+    }
+    assert calls["route_pattern"] == "**/*"
+    assert calls["ws_pattern"] == "**/*"
+    assert calls["context_closed"] is True
+    assert calls["browser_closed"] is True
+    assert calls["playwright_stopped"] is True

@@ -309,6 +309,7 @@ def validate_web_url(
     *,
     block_private_networks: bool = True,
     resolver: Resolver | None = None,
+    allowed_schemes: Iterable[str] | None = None,
 ) -> CheckedUrl:
     raw = url.strip()
     if not raw:
@@ -316,10 +317,16 @@ def validate_web_url(
 
     parts = urlsplit(raw)
     scheme = parts.scheme.lower()
-    if scheme not in {"http", "https"}:
+    supported_schemes = tuple(allowed_schemes or ("http", "https"))
+    if scheme not in supported_schemes:
+        rendered_schemes = " and ".join(supported_schemes)
         raise InvalidUrlError(
-            "Only http and https URLs are supported.",
-            details={"url": url, "scheme": parts.scheme},
+            f"Only {rendered_schemes} URLs are supported.",
+            details={
+                "url": url,
+                "scheme": parts.scheme,
+                "allowed_schemes": list(supported_schemes),
+            },
         )
     if not parts.hostname:
         raise InvalidUrlError("URL must include a hostname.", details={"url": url})

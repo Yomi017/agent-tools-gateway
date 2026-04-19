@@ -49,6 +49,7 @@ export TOOLHUB_OUTBOUND_NO_PROXY="localhost,127.0.0.1,convertx,browserless,toolh
 这组 `TOOLHUB_OUTBOUND_*` 现在只给 `toolhub-api` 和 `toolhub-mcp` 使用。
 `browserless` 默认保持直连公网，不继承这组代理，避免 Chromium 在抓网页时出现
 `net::ERR_PROXY_CONNECTION_FAILED`。
+同时 `browserless` 也不会再拿到 `host.docker.internal` 映射；浏览器容器默认不应该直连宿主机服务或代理桥。
 
 当前这台机器推荐直接用 `17990`。它是 WSL 到 Windows 代理的桥：
 
@@ -70,6 +71,7 @@ export TOOLHUB_WEBCAPTURE_DNS_SECONDARY="119.29.29.29"
 这套 DNS 只优先保证公网网页抓取，不保证解析 `*.ts.net` 或其他内网域名。
 
 另外要注意：Browserless 镜像和 Python Playwright 必须保持同一 minor 版本，`chromium.connect()` 才能正常工作。当前仓库按 `ghcr.io/browserless/chromium:v2.38.2 -> Playwright 1.56.x` 对齐；如果后面升级 Browserless，需要同步重新评估 Python 侧 Playwright 版本。
+同时 Browserless 的 job timeout 也要不小于 gateway 侧的浏览器超时；当前 compose 已显式固定 `TIMEOUT=120000`，避免慢页面或整页截图在 Browserless 默认 30 秒处被提前杀掉。
 
 ## 启动
 
@@ -123,6 +125,8 @@ curl http://127.0.0.1:8765/health
 - `webcapture/check` 更适合作为可选的深度 smoke，不应该作为每次启动脚本的硬失败条件。
 - WebCapture 现在默认走容器独立 DNS，不再依赖宿主机当前的 WSL DNS 是否可用。
 - WebCapture 真正抓网页时，`browserless` 默认直连公网；`TOOLHUB_OUTBOUND_*` 只影响 `toolhub-api` / `toolhub-mcp`。
+- WebCapture 的浏览器上下文会固定禁用 Service Worker，并对 WebSocket URL 继续套用同一套公网校验，避免绕过现有 SSRF 防护。
+- WebCapture 默认还有两条保守资源限制：`max_capture_bytes=67108864`、`max_full_page_height_px=20000`。超限时会直接返回 `capture_limit_exceeded`，不会写出部分产物。
 
 启用 token 后：
 

@@ -9,9 +9,10 @@ from fastapi.testclient import TestClient
 from toolhub.api import create_app
 from toolhub.backends.webcapture import WebCaptureClient
 from toolhub.config import Settings
+from toolhub.errors import CaptureLimitError, OutputExistsError
 from toolhub.security import CheckedUrl
 from toolhub.tools.webcapture.backend import capture_url
-from toolhub.tools.webcapture.client import CaptureArtifact, _render_markdown
+from toolhub.tools.webcapture.client import CaptureArtifact, PlaywrightCaptureSession, _render_markdown
 
 
 @dataclass
@@ -52,6 +53,13 @@ def _session_factory(
         return FakeSession(calls=calls, artifact_by_format=artifact_by_format)
 
     return factory
+
+
+@dataclass
+class FakeNavigationResponse:
+    status: int = 200
+    ok: bool = True
+    url: str = "https://example.com/final"
 
 
 @pytest.mark.asyncio
@@ -204,7 +212,9 @@ async def test_backend_capture_url_writes_output_file(
 
     assert payload.output.filename == f"example-home.{output_format}"
     assert payload.duration_ms == 17
-    assert output_dir.joinpath(f"example-home.{output_format}").read_bytes() == content
+    output_path = output_dir.joinpath(f"example-home.{output_format}")
+    assert output_path.read_bytes() == content
+    assert output_path.stat().st_mode & 0o777 == 0o644
 
 
 def test_render_markdown_falls_back_to_body_when_readability_is_too_short() -> None:
@@ -233,3 +243,182 @@ def test_webcapture_invalid_payload_types_return_422(payload) -> None:
     response = client.post("/v1/webcapture/check", json=payload)
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_playwright_capture_rejects_full_page_height_limit(webcapture_settings) -> None:
+    runtime = webcapture_settings.webcapture().model_copy(update={"max_full_page_height_px": 1000})
+    session = PlaywrightCaptureSession(runtime, resolver=lambda hostname, port: ["93.184.216.34"])
+
+    class FakePage:
+        url = "https://example.com/final"
+
+        async def goto(self, *args, **kwargs) -> FakeNavigationResponse:
+            return FakeNavigationResponse()
+
+        async def wait_for_timeout(self, _delay_ms: int) -> None:
+            return None
+
+        async def title(self) -> str:
+            return "Example Domain"
+
+        async def evaluate(self, _script: str) -> int:
+            return 1001
+
+        async def screenshot(self, **kwargs) -> bytes:
+            raise AssertionError("screenshot should not run when the page height exceeds the limit")
+
+    session._page = FakePage()
+
+    with pytest.raises(CaptureLimitError) as exc_info:
+        await session.capture(url="https://example.com", output_format="png", full_page=True)
+
+    assert exc_info.value.details == {
+        "output_format": "png",
+        "limit": 1000,
+        "actual": 1001,
+        "page_height_px": 1001,
+    }
+
+
+@pytest.mark.asyncio
+async def test_playwright_capture_rejects_oversized_artifact(webcapture_settings) -> None:
+    runtime = webcapture_settings.webcapture().model_copy(update={"max_capture_bytes": 8})
+    session = PlaywrightCaptureSession(runtime, resolver=lambda hostname, port: ["93.184.216.34"])
+
+    class FakePage:
+        url = "https://example.com/final"
+
+        async def goto(self, *args, **kwargs) -> FakeNavigationResponse:
+            return FakeNavigationResponse()
+
+        async def wait_for_timeout(self, _delay_ms: int) -> None:
+            return None
+
+        async def title(self) -> str:
+            return "Example Domain"
+
+        async def pdf(self, **kwargs) -> bytes:
+            return b"%PDF-1.7 TOO LARGE"
+
+    session._page = FakePage()
+
+    with pytest.raises(CaptureLimitError) as exc_info:
+        await session.capture(url="https://example.com", output_format="pdf")
+
+    assert exc_info.value.details == {
+        "output_format": "pdf",
+        "limit": 8,
+        "actual": len(b"%PDF-1.7 TOO LARGE"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_backend_capture_url_rejects_symlink_race_without_overwrite(
+    webcapture_settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    output_dir = webcapture_settings.webcapture().allowed_output_roots[0]
+    output_path = output_dir / "example-race.pdf"
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside")
+
+    class FakeClient:
+        def __init__(self, _runtime) -> None:
+            pass
+
+        async def capture(self, **kwargs):
+            try:
+                output_path.symlink_to(outside)
+            except OSError:
+                pytest.skip("symlinks are not supported on this filesystem")
+            return (
+                CaptureArtifact(
+                    content=b"%PDF-1.7 new",
+                    final_url="https://example.com/final",
+                    title="Example Domain",
+                    navigation_status={"status": 200, "ok": True, "url": "https://example.com/final"},
+                ),
+                17,
+            )
+
+    monkeypatch.setattr("toolhub.tools.webcapture.backend.WebCaptureClient", FakeClient)
+    monkeypatch.setattr(
+        "toolhub.tools.webcapture.backend.validate_web_url",
+        lambda url, block_private_networks=True: CheckedUrl(
+            raw_url=url,
+            normalized_url=url,
+            hostname="example.com",
+            port=443,
+        ),
+    )
+
+    with pytest.raises(OutputExistsError):
+        await capture_url(
+            url="https://example.com",
+            output_format="pdf",
+            output_dir=str(output_dir),
+            filename_stem="example-race",
+            overwrite=False,
+            settings=webcapture_settings,
+        )
+
+    assert output_path.is_symlink()
+    assert outside.read_bytes() == b"outside"
+
+
+@pytest.mark.asyncio
+async def test_backend_capture_url_overwrite_replaces_symlink_without_touching_outside(
+    webcapture_settings,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    output_dir = webcapture_settings.webcapture().allowed_output_roots[0]
+    output_path = output_dir / "example-race.pdf"
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside")
+
+    class FakeClient:
+        def __init__(self, _runtime) -> None:
+            pass
+
+        async def capture(self, **kwargs):
+            try:
+                output_path.symlink_to(outside)
+            except OSError:
+                pytest.skip("symlinks are not supported on this filesystem")
+            return (
+                CaptureArtifact(
+                    content=b"%PDF-1.7 replaced",
+                    final_url="https://example.com/final",
+                    title="Example Domain",
+                    navigation_status={"status": 200, "ok": True, "url": "https://example.com/final"},
+                ),
+                17,
+            )
+
+    monkeypatch.setattr("toolhub.tools.webcapture.backend.WebCaptureClient", FakeClient)
+    monkeypatch.setattr(
+        "toolhub.tools.webcapture.backend.validate_web_url",
+        lambda url, block_private_networks=True: CheckedUrl(
+            raw_url=url,
+            normalized_url=url,
+            hostname="example.com",
+            port=443,
+        ),
+    )
+
+    payload = await capture_url(
+        url="https://example.com",
+        output_format="pdf",
+        output_dir=str(output_dir),
+        filename_stem="example-race",
+        overwrite=True,
+        settings=webcapture_settings,
+    )
+
+    assert payload.output.path == str(output_path)
+    assert output_path.is_symlink() is False
+    assert output_path.read_bytes() == b"%PDF-1.7 replaced"
+    assert outside.read_bytes() == b"outside"
