@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import io
 import ipaddress
+import os
 import re
+import secrets
 import shutil
 import socket
 import tarfile
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from .config import ConvertXRuntimeSettings, Settings, WebCaptureRuntimeSettings
+from .config import (
+    ConvertXRuntimeSettings,
+    DoclingRuntimeSettings,
+    Settings,
+    WebCaptureRuntimeSettings,
+)
 from .errors import (
     FileTooLargeError,
     FormatNotSupportedError,
@@ -31,7 +39,10 @@ OUTPUT_EXTENSIONS = {"pdf": "pdf", "png": "png", "md": "md"}
 
 
 class PathPolicy:
-    def __init__(self, settings: Settings | ConvertXRuntimeSettings) -> None:
+    def __init__(
+        self,
+        settings: Settings | ConvertXRuntimeSettings | DoclingRuntimeSettings,
+    ) -> None:
         runtime = settings.convertx() if isinstance(settings, Settings) else settings
         self.settings = runtime
         self.input_roots = [self._root(root) for root in runtime.allowed_input_roots]
@@ -166,29 +177,7 @@ class WebCapturePathPolicy:
         return resolved
 
     def validate_filename_stem(self, value: str | None) -> str | None:
-        if value is None:
-            return None
-        if not value or value != value.strip():
-            raise InvalidFilenameError(
-                "filename_stem must be a non-empty basename without surrounding whitespace.",
-                details={"filename_stem": value},
-            )
-        if "/" in value or "\\" in value or "\x00" in value:
-            raise InvalidFilenameError(
-                "filename_stem must not contain path separators.",
-                details={"filename_stem": value},
-            )
-        if value in {".", ".."}:
-            raise InvalidFilenameError(
-                "filename_stem must not be '.' or '..'.",
-                details={"filename_stem": value},
-            )
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,127}", value):
-            raise InvalidFilenameError(
-                "filename_stem contains unsupported characters.",
-                details={"filename_stem": value},
-            )
-        return value
+        return validate_filename_stem(value)
 
     def build_output_path(
         self,
@@ -219,6 +208,85 @@ class WebCapturePathPolicy:
                 details={"path": str(target)},
             )
         return target
+
+
+def validate_filename_stem(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not value or value != value.strip():
+        raise InvalidFilenameError(
+            "filename_stem must be a non-empty basename without surrounding whitespace.",
+            details={"filename_stem": value},
+        )
+    if "/" in value or "\\" in value or "\x00" in value:
+        raise InvalidFilenameError(
+            "filename_stem must not contain path separators.",
+            details={"filename_stem": value},
+        )
+    if value in {".", ".."}:
+        raise InvalidFilenameError(
+            "filename_stem must not be '.' or '..'.",
+            details={"filename_stem": value},
+        )
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,127}", value):
+        raise InvalidFilenameError(
+            "filename_stem contains unsupported characters.",
+            details={"filename_stem": value},
+        )
+    return value
+
+
+def safe_write_output_file(output_path: Path, content: bytes, *, overwrite: bool) -> None:
+    directory = output_path.parent
+    target_name = output_path.name
+    temp_name = f".{target_name}.tmp-{secrets.token_hex(8)}"
+    file_mode = 0o644
+    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    dir_fd = os.open(directory, dir_flags)
+    temp_created = False
+
+    try:
+        temp_fd = os.open(
+            temp_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            file_mode,
+            dir_fd=dir_fd,
+        )
+        temp_created = True
+        with os.fdopen(temp_fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fchmod(handle.fileno(), file_mode)
+            os.fsync(handle.fileno())
+
+        if overwrite:
+            os.replace(temp_name, target_name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+            temp_created = False
+        else:
+            try:
+                os.link(
+                    temp_name,
+                    target_name,
+                    src_dir_fd=dir_fd,
+                    dst_dir_fd=dir_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError as exc:
+                raise OutputExistsError(
+                    f"Output file already exists: {output_path}",
+                    details={"path": str(output_path)},
+                ) from exc
+            finally:
+                with suppress(FileNotFoundError):
+                    os.unlink(temp_name, dir_fd=dir_fd)
+                temp_created = False
+
+        os.fsync(dir_fd)
+    finally:
+        if temp_created:
+            with suppress(FileNotFoundError):
+                os.unlink(temp_name, dir_fd=dir_fd)
+        os.close(dir_fd)
 
 
 def _quote_userinfo(value: str | None) -> str | None:

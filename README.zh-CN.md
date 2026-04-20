@@ -12,10 +12,22 @@ cd /home/shinku/data/service/tool/agent-tools-gateway
 /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input
 ```
 
+Docling 输入目录：
+
+```text
+/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input
+```
+
 输出目录：
 
 ```text
 /home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output
+```
+
+Docling 输出目录：
+
+```text
+/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output
 ```
 
 网页落地输出目录：
@@ -43,7 +55,7 @@ export BROWSERLESS_TOKEN="change-me-browserless-token"
 ```bash
 export TOOLHUB_OUTBOUND_HTTP_PROXY="http://host.docker.internal:17990"
 export TOOLHUB_OUTBOUND_HTTPS_PROXY="http://host.docker.internal:17990"
-export TOOLHUB_OUTBOUND_NO_PROXY="localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal"
+export TOOLHUB_OUTBOUND_NO_PROXY="localhost,127.0.0.1,convertx,docling,browserless,toolhub-api,toolhub-mcp,host.docker.internal"
 ```
 
 这组 `TOOLHUB_OUTBOUND_*` 现在只给 `toolhub-api` 和 `toolhub-mcp` 使用。
@@ -72,19 +84,22 @@ export TOOLHUB_WEBCAPTURE_DNS_SECONDARY="119.29.29.29"
 
 另外要注意：Browserless 镜像和 Python Playwright 必须保持同一 minor 版本，`chromium.connect()` 才能正常工作。当前仓库按 `ghcr.io/browserless/chromium:v2.38.2 -> Playwright 1.56.x` 对齐；如果后面升级 Browserless，需要同步重新评估 Python 侧 Playwright 版本。
 同时 Browserless 的 job timeout 也要不小于 gateway 侧的浏览器超时；当前 compose 已显式固定 `TIMEOUT=120000`，避免慢页面或整页截图在 Browserless 默认 30 秒处被提前杀掉。
+Docling 的 CPU 基础镜像当前也没有发布 `1.16.1` 这种显式 tag，所以这里直接跟官方 `ghcr.io/docling-project/docling-serve-cpu:latest`，而不是写一个实际上拉不下来的版本号。
+另外，Docling Serve 在启动时会把空的 `DOCLING_SERVE_API_KEY` 视为非法值，所以仓库里的 compose 会在变量为空时自动 `unset`，默认仍然保持“可不配 API key”。
+同时基础 compose 默认不会把 raw Docling 发布到宿主机；正常使用只通过 gateway 访问 `docling` backend。只有你显式叠加 `docker-compose.debug.yml` 时，`127.0.0.1:5001` 才会重新开放出来。
 
 ## 启动
 
 启动全部服务：
 
 ```bash
-docker compose up -d convertx browserless toolhub-api toolhub-mcp
+docker compose up -d convertx docling browserless toolhub-api toolhub-mcp
 ```
 
 首次构建或更新后启动：
 
 ```bash
-docker compose up -d --build convertx browserless toolhub-api toolhub-mcp
+docker compose up -d --build convertx docling browserless toolhub-api toolhub-mcp
 ```
 
 停止：
@@ -104,6 +119,7 @@ docker compose down
 ```bash
 docker compose ps
 docker compose logs -f convertx
+docker compose logs -f docling
 docker compose logs -f browserless
 docker compose logs -f toolhub-api
 docker compose logs -f toolhub-mcp
@@ -120,13 +136,37 @@ curl http://127.0.0.1:8765/health
 这里要注意：
 
 - `http://127.0.0.1:3001/pressure` 只表示 Browserless 容器活着。
-- `http://127.0.0.1:8765/health` 只表示 gateway 能连到 Browserless。
+- `http://127.0.0.1:8765/health` 会聚合 gateway 当前能否连到 ConvertX、Docling、Browserless。
 - 这两个检查都不代表“公网网页抓取已可用”。
 - `webcapture/check` 更适合作为可选的深度 smoke，不应该作为每次启动脚本的硬失败条件。
 - WebCapture 现在默认走容器独立 DNS，不再依赖宿主机当前的 WSL DNS 是否可用。
 - WebCapture 真正抓网页时，`browserless` 默认直连公网；`TOOLHUB_OUTBOUND_*` 只影响 `toolhub-api` / `toolhub-mcp`。
 - WebCapture 的浏览器上下文会固定禁用 Service Worker，并对 WebSocket URL 继续套用同一套公网校验，避免绕过现有 SSRF 防护。
 - WebCapture 默认还有两条保守资源限制：`max_capture_bytes=67108864`、`max_full_page_height_px=20000`。超限时会直接返回 `capture_limit_exceeded`，不会写出部分产物。
+
+## Docling 调试暴露
+
+默认栈不会开放 `127.0.0.1:5001`。如果你需要直接调 raw Docling，再显式叠加调试覆盖文件：
+
+```bash
+export DOCLING_SERVE_API_KEY="change-me-docling-debug-key"
+docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d docling toolhub-api toolhub-mcp
+```
+
+这时可以直接访问版本接口：
+
+```bash
+curl http://127.0.0.1:5001/version
+```
+
+raw Docling 的转换接口则需要带同一个 `X-Api-Key`：
+
+```bash
+curl -X POST http://127.0.0.1:5001/v1/convert/file/async \
+  -H "X-Api-Key: $DOCLING_SERVE_API_KEY" \
+  -F files=@/path/to/example.pdf \
+  -F to_formats=md
+```
 
 启用 token 后：
 
@@ -210,6 +250,66 @@ curl -sS -X POST http://127.0.0.1:8765/v1/convertx/convert \
     "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input/example.png",
     "output_format": "jpg",
     "overwrite": true
+  }'
+```
+
+## 文档转换
+
+只检查 Docling 的输入路径和输出规划，不实际生成文件：
+
+```bash
+uv run tool-call docling --check \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input/example.pdf \
+  md \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output \
+  false
+```
+
+导出为 Markdown：
+
+```bash
+uv run tool-call docling \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input/example.pdf \
+  md \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output \
+  true
+```
+
+带 OCR 和图片引用导出为 HTML：
+
+```bash
+uv run tool-call docling --name lecture-html --do-ocr true --include-images true \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input/example.pdf \
+  html \
+  /home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output \
+  true
+```
+
+REST 检查：
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/v1/docling/check \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input/example.pdf",
+    "output_format": "md",
+    "output_dir": "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output",
+    "overwrite": false
+  }'
+```
+
+REST 生成：
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/v1/docling/convert \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "input_path": "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input/example.pdf",
+    "output_format": "html",
+    "output_dir": "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output",
+    "filename_stem": "example-doc",
+    "overwrite": true,
+    "do_ocr": true
   }'
 ```
 
@@ -353,6 +453,9 @@ mcp_toolhub_convertx_health
 mcp_toolhub_convertx_list_targets
 mcp_toolhub_convertx_convert_file
 mcp_toolhub_convertx_convert_batch
+mcp_toolhub_docling_health
+mcp_toolhub_docling_check_file
+mcp_toolhub_docling_convert_file
 mcp_toolhub_webcapture_health
 mcp_toolhub_webcapture_check_url
 mcp_toolhub_webcapture_capture_url

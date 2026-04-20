@@ -20,6 +20,16 @@ backends:
     allowed_output_roots:
       - "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"
     temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+  docling:
+    enabled: false
+    base_url: "http://127.0.0.1:5001"
+    # api_key: "change-me-docling-api-key"
+    work_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work"
+    allowed_input_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input"
+    allowed_output_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"
+    temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
   webcapture:
     enabled: false
     base_url: "http://127.0.0.1:3001"

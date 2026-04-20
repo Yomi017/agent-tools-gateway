@@ -2,11 +2,11 @@ x-proxy-env: &proxy_env
   HTTP_PROXY: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   HTTPS_PROXY: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   ALL_PROXY: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
   http_proxy: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   https_proxy: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   all_proxy: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
 
 x-host-gateway: &host_gateway
   - "host.docker.internal:host-gateway"
@@ -38,6 +38,25 @@ services:
     volumes:
       - ./tools/ConvertX/data:/app/data
 
+  docling:
+    image: ghcr.io/docling-project/docling-serve-cpu:latest
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        if [ -z "${DOCLING_SERVE_API_KEY:-}" ]; then
+          unset DOCLING_SERVE_API_KEY
+        fi
+        exec docling-serve run
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "false"
+      DOCLING_SERVE_ENABLE_REMOTE_SERVICES: "false"
+      DOCLING_SERVE_ALLOW_EXTERNAL_PLUGINS: "false"
+      DOCLING_SERVE_SHOW_VERSION_INFO: "true"
+      DOCLING_SERVE_API_KEY: "${DOCLING_SERVE_API_KEY:-}"
+      UVICORN_WORKERS: "1"
+
   browserless:
     <<: *webcapture_dns
     image: ghcr.io/browserless/chromium:v2.38.2
@@ -59,6 +78,7 @@ services:
     command: ["toolhub-api"]
     depends_on:
       - convertx
+      - docling
       - browserless
     ports:
       - "127.0.0.1:8765:8765"
@@ -72,6 +92,13 @@ services:
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
       TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+      TOOLHUB_BACKENDS__DOCLING__ENABLED: "true"
+      TOOLHUB_BACKENDS__DOCLING__BASE_URL: "http://docling:5001"
+      TOOLHUB_BACKENDS__DOCLING__API_KEY: "${DOCLING_SERVE_API_KEY:-}"
+      TOOLHUB_BACKENDS__DOCLING__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work"
+      TOOLHUB_BACKENDS__DOCLING__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input"]'
+      TOOLHUB_BACKENDS__DOCLING__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"]'
+      TOOLHUB_BACKENDS__DOCLING__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
       TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
       TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
       TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
@@ -80,6 +107,7 @@ services:
       TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
+      - ./tools/Docling/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work
       - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work
 
   toolhub-mcp:
@@ -89,6 +117,7 @@ services:
     command: ["toolhub-mcp-http"]
     depends_on:
       - convertx
+      - docling
       - browserless
     ports:
       - "127.0.0.1:8766:8766"
@@ -102,6 +131,13 @@ services:
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/input"]'
       TOOLHUB_BACKENDS__CONVERTX__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/output"]'
       TOOLHUB_BACKENDS__CONVERTX__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work/tmp"
+      TOOLHUB_BACKENDS__DOCLING__ENABLED: "true"
+      TOOLHUB_BACKENDS__DOCLING__BASE_URL: "http://docling:5001"
+      TOOLHUB_BACKENDS__DOCLING__API_KEY: "${DOCLING_SERVE_API_KEY:-}"
+      TOOLHUB_BACKENDS__DOCLING__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work"
+      TOOLHUB_BACKENDS__DOCLING__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input"]'
+      TOOLHUB_BACKENDS__DOCLING__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"]'
+      TOOLHUB_BACKENDS__DOCLING__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
       TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
       TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
       TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
@@ -110,4 +146,5 @@ services:
       TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
+      - ./tools/Docling/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work
       - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work

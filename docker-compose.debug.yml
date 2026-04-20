@@ -1,0 +1,14 @@
+services:
+  docling:
+    ports:
+      - "127.0.0.1:5001:5001"
+    environment:
+      DOCLING_SERVE_API_KEY: "${DOCLING_SERVE_API_KEY:?Set DOCLING_SERVE_API_KEY when exposing raw Docling}"
+
+  toolhub-api:
+    environment:
+      TOOLHUB_BACKENDS__DOCLING__API_KEY: "${DOCLING_SERVE_API_KEY:?Set DOCLING_SERVE_API_KEY when exposing raw Docling}"
+
+  toolhub-mcp:
+    environment:
+      TOOLHUB_BACKENDS__DOCLING__API_KEY: "${DOCLING_SERVE_API_KEY:?Set DOCLING_SERVE_API_KEY when exposing raw Docling}"

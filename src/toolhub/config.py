@@ -16,6 +16,8 @@ DEFAULT_GATEWAY_ROOT = Path(
 DEFAULT_TOOLS_ROOT = DEFAULT_GATEWAY_ROOT / "tools"
 DEFAULT_CONVERTX_HOME = DEFAULT_TOOLS_ROOT / "ConvertX"
 DEFAULT_CONVERTX_WORK_ROOT = DEFAULT_CONVERTX_HOME / "work"
+DEFAULT_DOCLING_HOME = DEFAULT_TOOLS_ROOT / "Docling"
+DEFAULT_DOCLING_WORK_ROOT = DEFAULT_DOCLING_HOME / "work"
 DEFAULT_WEBCAPTURE_HOME = DEFAULT_TOOLS_ROOT / "WebCapture"
 DEFAULT_WEBCAPTURE_WORK_ROOT = DEFAULT_WEBCAPTURE_HOME / "work"
 
@@ -156,10 +158,28 @@ class WebCaptureBackendConfig(BaseModel):
         return _coerce_path_list(value)
 
 
+class DoclingBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    base_url: str | None = None
+    api_key: str | None = None
+    work_root: Path | None = None
+    allowed_input_roots: list[Path] | None = None
+    allowed_output_roots: list[Path] | None = None
+    temp_root: Path | None = None
+
+    @field_validator("allowed_input_roots", "allowed_output_roots", mode="before")
+    @classmethod
+    def _coerce_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
+
+
 class BackendsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     convertx: ConvertXBackendConfig = Field(default_factory=ConvertXBackendConfig)
+    docling: DoclingBackendConfig = Field(default_factory=DoclingBackendConfig)
     webcapture: WebCaptureBackendConfig = Field(default_factory=WebCaptureBackendConfig)
 
 
@@ -209,6 +229,30 @@ class WebCaptureRuntimeSettings(BaseModel):
     def ensure_directories(self) -> None:
         self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
         for root in [*self.allowed_output_roots, self.temp_root]:
+            root.expanduser().mkdir(parents=True, exist_ok=True)
+
+
+class DoclingRuntimeSettings(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:5001"
+    api_key: str | None = None
+    work_root: Path = DEFAULT_DOCLING_WORK_ROOT
+    allowed_input_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_DOCLING_WORK_ROOT / "input"]
+    )
+    allowed_output_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_DOCLING_WORK_ROOT / "output"]
+    )
+    temp_root: Path = DEFAULT_DOCLING_WORK_ROOT / "tmp"
+    request_timeout_seconds: float = 120.0
+    connect_timeout_seconds: float = 30.0
+    conversion_timeout_seconds: float = 600.0
+    poll_interval_seconds: float = 1.0
+    max_file_bytes: int = 512 * 1024 * 1024
+
+    def ensure_directories(self) -> None:
+        self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
+        for root in [*self.allowed_input_roots, *self.allowed_output_roots, self.temp_root]:
             root.expanduser().mkdir(parents=True, exist_ok=True)
 
 
@@ -326,9 +370,37 @@ class Settings(BaseSettings):
             runtime.ensure_directories()
         return runtime
 
+    def docling(self) -> DoclingRuntimeSettings:
+        backend = self.backends.docling
+
+        work_root = backend.work_root or DEFAULT_DOCLING_WORK_ROOT
+        allowed_input_roots = backend.allowed_input_roots or [work_root / "input"]
+        allowed_output_roots = backend.allowed_output_roots or [work_root / "output"]
+        temp_root = backend.temp_root or work_root / "tmp"
+
+        runtime = DoclingRuntimeSettings(
+            enabled=backend.enabled,
+            base_url=backend.base_url or "http://127.0.0.1:5001",
+            api_key=backend.api_key,
+            work_root=work_root,
+            allowed_input_roots=allowed_input_roots,
+            allowed_output_roots=allowed_output_roots,
+            temp_root=temp_root,
+            request_timeout_seconds=self.request_timeout_seconds,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+            conversion_timeout_seconds=self.conversion_timeout_seconds,
+            poll_interval_seconds=self.poll_interval_seconds,
+            max_file_bytes=self.max_file_bytes,
+        )
+        if runtime.enabled:
+            runtime.ensure_directories()
+        return runtime
+
     def ensure_directories(self) -> None:
         if self.backends.convertx.enabled:
             self.convertx().ensure_directories()
+        if self.backends.docling.enabled:
+            self.docling().ensure_directories()
         if self.backends.webcapture.enabled:
             self.webcapture().ensure_directories()
 

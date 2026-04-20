@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import os
-import secrets
-from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable
 
@@ -11,9 +8,9 @@ from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 
 from ...config import Settings, WebCaptureRuntimeSettings, get_settings
-from ...errors import OutputExistsError, error_payload
+from ...errors import error_payload
 from ...models import OutputFile
-from ...security import WebCapturePathPolicy, validate_web_url
+from ...security import WebCapturePathPolicy, safe_write_output_file, validate_web_url
 from .client import DEFAULT_WAIT_UNTIL, WebCaptureClient
 from .models import CaptureRequest, CaptureSuccess, CheckSuccess, NavigationStatus
 
@@ -38,59 +35,6 @@ def _effective_options(
     if output_format == "png":
         options["full_page"] = True if full_page is None else full_page
     return options
-
-
-def _safe_write_output_file(output_path: Path, content: bytes, *, overwrite: bool) -> None:
-    directory = output_path.parent
-    target_name = output_path.name
-    temp_name = f".{target_name}.tmp-{secrets.token_hex(8)}"
-    file_mode = 0o644
-    dir_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    dir_fd = os.open(directory, dir_flags)
-    temp_created = False
-
-    try:
-        temp_fd = os.open(
-            temp_name,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            file_mode,
-            dir_fd=dir_fd,
-        )
-        temp_created = True
-        with os.fdopen(temp_fd, "wb") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fchmod(handle.fileno(), file_mode)
-            os.fsync(handle.fileno())
-
-        if overwrite:
-            os.replace(temp_name, target_name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
-            temp_created = False
-        else:
-            try:
-                os.link(
-                    temp_name,
-                    target_name,
-                    src_dir_fd=dir_fd,
-                    dst_dir_fd=dir_fd,
-                    follow_symlinks=False,
-                )
-            except FileExistsError as exc:
-                raise OutputExistsError(
-                    f"Output file already exists: {output_path}",
-                    details={"path": str(output_path)},
-                ) from exc
-            finally:
-                with suppress(FileNotFoundError):
-                    os.unlink(temp_name, dir_fd=dir_fd)
-                temp_created = False
-
-        os.fsync(dir_fd)
-    finally:
-        if temp_created:
-            with suppress(FileNotFoundError):
-                os.unlink(temp_name, dir_fd=dir_fd)
-        os.close(dir_fd)
 
 
 async def health(settings: Settings | None = None) -> dict[str, Any]:
@@ -161,7 +105,7 @@ async def capture_url(
         full_page=full_page,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    _safe_write_output_file(output_path, artifact.content, overwrite=overwrite)
+    safe_write_output_file(output_path, artifact.content, overwrite=overwrite)
 
     return CaptureSuccess(
         requested_url=url,

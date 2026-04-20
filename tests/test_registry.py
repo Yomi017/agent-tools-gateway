@@ -27,6 +27,12 @@ def test_registry_discovers_enabled_webcapture_backend(webcapture_settings) -> N
     assert [backend.key for backend in backends] == ["convertx", "webcapture"]
 
 
+def test_registry_discovers_enabled_docling_backend(docling_settings) -> None:
+    backends = get_enabled_backends(docling_settings)
+
+    assert [backend.key for backend in backends] == ["convertx", "docling"]
+
+
 def test_registry_skips_disabled_backend() -> None:
     settings = Settings(backends={"convertx": {"enabled": False}})
 
@@ -75,6 +81,17 @@ def test_mcp_registers_webcapture_tools(webcapture_settings) -> None:
         "webcapture_capture_url",
         "check_webpage_capture",
         "capture_webpage",
+    }.issubset(names)
+
+
+def test_mcp_registers_docling_tools(docling_settings) -> None:
+    mcp = create_mcp(docling_settings)
+    names = set(mcp._tool_manager._tools)
+
+    assert {
+        "docling_health",
+        "docling_check_file",
+        "docling_convert_file",
     }.issubset(names)
 
 
@@ -149,6 +166,32 @@ async def test_health_route_includes_unreachable_webcapture_backend(webcapture_s
     assert payload["ok"] is True
     assert payload["backends"]["webcapture"]["reachable"] is False
     assert payload["backends"]["webcapture"]["status_code"] == 401
+
+
+@pytest.mark.asyncio
+async def test_health_route_includes_docling_backend(docling_settings, monkeypatch) -> None:
+    async def fake_health(_settings=None):
+        return HealthResponse(
+            backends={
+                "convertx": {"reachable": True, "base_url": "http://convertx.test"},
+                "docling": {
+                    "reachable": True,
+                    "base_url": "http://docling.test",
+                    "version": {"name": "Docling Serve", "version": "1.16.1"},
+                },
+            }
+        )
+
+    monkeypatch.setattr("toolhub.api.health", fake_health)
+
+    app = create_app(docling_settings)
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/health")
+    response = await route.endpoint()
+
+    payload = json.loads(response.body)
+    assert payload["ok"] is True
+    assert payload["backends"]["docling"]["reachable"] is True
+    assert payload["backends"]["docling"]["version"]["version"] == "1.16.1"
 
 
 @pytest.mark.asyncio
