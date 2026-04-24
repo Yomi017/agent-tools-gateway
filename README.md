@@ -1,8 +1,8 @@
 # Agent Tools Gateway
 
-Local HTTP and MCP gateway for agent-callable tools. The current backends wrap a
-self-hosted ConvertX service and a Browserless-powered webpage capture flow
-without vendoring either upstream service.
+Local HTTP and MCP gateway for agent-callable tools. The current backends wrap
+self-hosted ConvertX, Docling, Browserless-backed web capture, and SearXNG
+search services without vendoring their upstream implementations.
 
 Chinese guide: [README.zh-CN.md](README.zh-CN.md)
 
@@ -17,6 +17,7 @@ src/toolhub/
   security.py             # path / URL policy and safe tar extraction
   tools/convertx/         # ConvertX backend package
   tools/docling/          # Docling backend package
+  tools/searxng/          # SearXNG search backend package
   tools/webcapture/       # Browserless web capture backend package
 tools/
   ConvertX/
@@ -26,6 +27,10 @@ tools/
   Docling/
     README.md             # integration home
     work/                 # input/output/tmp, gitignored
+  SearXNG/
+    README.md             # integration home
+    config/               # mounted SearXNG settings
+    data/                 # runtime cache, gitignored
   WebCapture/
     README.md             # integration home
     work/                 # output/tmp, gitignored
@@ -39,10 +44,10 @@ uv sync --extra dev
 cp config.example.yaml config.yaml
 ```
 
-Run ConvertX, Docling, and Browserless separately:
+Run ConvertX, Docling, SearXNG, and Browserless separately:
 
 ```bash
-docker compose up -d convertx docling browserless
+docker compose up -d convertx docling searxng browserless
 ```
 
 Docling stays on the internal compose network by default. Raw host access to
@@ -65,6 +70,7 @@ The defaults bind to localhost:
 - REST: `http://127.0.0.1:8765`
 - MCP: `http://127.0.0.1:8766/mcp`
 - ConvertX: `http://127.0.0.1:3000`
+- SearXNG: `http://127.0.0.1:8080`
 - Browserless: `http://127.0.0.1:3001`
 
 Docling is internal-only by default and is reached through the gateway via the
@@ -72,7 +78,7 @@ compose service name `docling:5001`.
 
 ## Docker Compose
 
-To run ConvertX, Docling, Browserless, REST, and MCP together:
+To run ConvertX, Docling, SearXNG, Browserless, REST, and MCP together:
 
 ```bash
 docker compose up -d --build
@@ -108,6 +114,12 @@ and Browserless to:
 ghcr.io/browserless/chromium:v2.38.2
 ```
 
+and SearXNG to:
+
+```text
+docker.io/searxng/searxng:latest
+```
+
 ConvertX input and output files are restricted to:
 
 ```text
@@ -128,6 +140,13 @@ Web capture outputs are restricted to:
 /home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output
 ```
 
+SearXNG runtime files live under:
+
+```text
+/home/shinku/data/service/tool/agent-tools-gateway/tools/SearXNG/config
+/home/shinku/data/service/tool/agent-tools-gateway/tools/SearXNG/data
+```
+
 Optional shared Bearer token for both REST and MCP:
 
 ```bash
@@ -146,6 +165,8 @@ export BROWSERLESS_TOKEN="change-me-browserless-token"
 
 ```bash
 curl http://127.0.0.1:8765/health
+curl http://127.0.0.1:8080/healthz
+curl "http://127.0.0.1:8080/search?q=example&format=json"
 curl "http://127.0.0.1:8765/v1/convertx/targets?input_format=png"
 curl -X POST http://127.0.0.1:8765/v1/webcapture/check \
   -H 'Content-Type: application/json' \
@@ -153,6 +174,17 @@ curl -X POST http://127.0.0.1:8765/v1/webcapture/check \
     "url": "https://example.com",
     "output_format": "pdf",
     "output_dir": "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"
+  }'
+```
+
+```bash
+curl -X POST http://127.0.0.1:8765/v1/searxng/search \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "OpenAI GPT-5.5",
+    "limit": 5,
+    "language": "auto",
+    "safe_search": "moderate"
   }'
 ```
 
@@ -259,6 +291,7 @@ mcp_servers:
         - convert_batch
         - docling_check_file
         - docling_convert_file
+        - searxng_search
         - webcapture_check_url
         - webcapture_capture_url
       resources: false
@@ -282,10 +315,20 @@ convertx_convert_batch
 docling_health
 docling_check_file
 docling_convert_file
+searxng_health
+searxng_search
 webcapture_health
 webcapture_check_url
 webcapture_capture_url
 ```
+
+Inside Hermes, these MCP tools are typically exposed with the server prefix as:
+
+```text
+mcp_toolhub_<tool_name>
+```
+
+For example, `searxng_search` becomes `mcp_toolhub_searxng_search`.
 
 OpenClaw config:
 

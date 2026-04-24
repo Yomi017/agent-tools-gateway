@@ -23,6 +23,16 @@ def _webcapture_paths(root: Path) -> tuple[Path, Path, Path]:
     return work_root, output_root, temp_root
 
 
+def _searxng_settings_values() -> dict[str, object]:
+    return {
+        "base_url": "http://searxng.test",
+        "default_limit": 7,
+        "max_limit": 15,
+        "default_language": "zh-CN",
+        "default_safe_search": "strict",
+    }
+
+
 def test_backend_scoped_convertx_config_is_used(tmp_path: Path) -> None:
     work_root, input_root, output_root, temp_root = _paths(tmp_path)
     settings = Settings(
@@ -205,6 +215,77 @@ def test_webcapture_backend_defaults_to_disabled() -> None:
     assert runtime.enabled is False
 
 
+def test_searxng_backend_defaults_to_disabled() -> None:
+    settings = Settings()
+
+    runtime = settings.searxng()
+
+    assert runtime.enabled is False
+    assert runtime.base_url == "http://127.0.0.1:8080"
+    assert runtime.default_safe_search == "moderate"
+
+
+def test_backend_scoped_searxng_config_is_used() -> None:
+    scoped = _searxng_settings_values()
+    settings = Settings(backends={"searxng": {"enabled": True, **scoped}})
+
+    runtime = settings.searxng()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == scoped["base_url"]
+    assert runtime.default_limit == scoped["default_limit"]
+    assert runtime.max_limit == scoped["max_limit"]
+    assert runtime.default_language == scoped["default_language"]
+    assert runtime.default_safe_search == scoped["default_safe_search"]
+
+
+def test_load_settings_reads_searxng_env(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "missing.yaml"
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__ENABLED", "true")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__BASE_URL", "http://searxng.env")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LIMIT", "8")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__MAX_LIMIT", "12")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LANGUAGE", "ja")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__SEARXNG__DEFAULT_SAFE_SEARCH", "off")
+
+    runtime = load_settings(config_path).searxng()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://searxng.env"
+    assert runtime.default_limit == 8
+    assert runtime.max_limit == 12
+    assert runtime.default_language == "ja"
+    assert runtime.default_safe_search == "off"
+
+
+def test_load_settings_reads_searxng_yaml(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "backends:",
+                "  searxng:",
+                "    enabled: true",
+                '    base_url: "http://searxng.yaml"',
+                "    default_limit: 6",
+                "    max_limit: 9",
+                '    default_language: "fr"',
+                '    default_safe_search: "strict"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    runtime = load_settings(config_path).searxng()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://searxng.yaml"
+    assert runtime.default_limit == 6
+    assert runtime.max_limit == 9
+    assert runtime.default_language == "fr"
+    assert runtime.default_safe_search == "strict"
+
+
 def test_backend_scoped_webcapture_config_is_used(tmp_path: Path) -> None:
     work_root, output_root, temp_root = _webcapture_paths(tmp_path)
     settings = Settings(
@@ -336,3 +417,21 @@ def test_browserless_has_no_host_gateway_mapping_in_compose() -> None:
     assert "extra_hosts" not in services["browserless"]
     assert services["toolhub-api"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
     assert services["toolhub-mcp"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
+
+
+def test_searxng_is_present_in_compose_and_no_proxy() -> None:
+    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml"
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert services["searxng"]["ports"] == ["127.0.0.1:8080:8080"]
+    assert services["searxng"]["extra_hosts"] == ["host.docker.internal:host-gateway"]
+    assert services["searxng"]["environment"]["HTTP_PROXY"] == "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
+    assert services["searxng"]["environment"]["HTTPS_PROXY"] == "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
+    assert services["searxng"]["environment"]["NO_PROXY"].startswith("${TOOLHUB_OUTBOUND_NO_PROXY:-")
+    assert services["searxng"]["dns"] == ["${TOOLHUB_WEBCAPTURE_DNS_PRIMARY:-223.5.5.5}", "${TOOLHUB_WEBCAPTURE_DNS_SECONDARY:-119.29.29.29}"]
+    assert services["searxng"]["dns_search"] == []
+    assert services["toolhub-api"]["environment"]["TOOLHUB_BACKENDS__SEARXNG__ENABLED"] == "true"
+    assert services["toolhub-mcp"]["environment"]["TOOLHUB_BACKENDS__SEARXNG__ENABLED"] == "true"
+    assert "searxng" in compose["x-proxy-env"]["NO_PROXY"]
+    assert "searxng" in compose["x-proxy-env"]["no_proxy"]

@@ -23,7 +23,9 @@ tools/WebCapture/
   prove that public web capture is usable.
 - Real smoke testing should call `POST /v1/webcapture/check` for a public URL,
   such as `https://example.com`, and confirm that the response includes
-  `planned_output_path` instead of `resolution_failed`.
+  `planned_output_path` instead of `resolution_failed`. A full runtime smoke
+  should also call `POST /v1/webcapture/capture`, because health and check
+  requests do not prove Chromium can navigate and write an artifact.
 - `toolhub-api` and `toolhub-mcp` can inherit
   `TOOLHUB_OUTBOUND_HTTP_PROXY`, `TOOLHUB_OUTBOUND_HTTPS_PROXY`, and
   `TOOLHUB_OUTBOUND_NO_PROXY` when the gateway itself needs a host proxy.

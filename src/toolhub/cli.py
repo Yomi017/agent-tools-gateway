@@ -16,6 +16,7 @@ import httpx
 
 from .tools.convertx.client import normalize_format
 from .tools.docling.models import normalize_docling_output_format
+from .tools.searxng.models import normalize_safe_search, normalize_time_range
 from .tools.webcapture.models import normalize_capture_format, normalize_wait_until
 
 
@@ -107,6 +108,30 @@ def _parse_docling_output_format(value: str) -> str:
         return normalize_docling_output_format(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _parse_safe_search(value: str) -> str:
+    try:
+        return normalize_safe_search(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _parse_time_range(value: str) -> str:
+    try:
+        return normalize_time_range(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _parse_positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be greater than 0")
+    return parsed
 
 
 def _print_json(payload: JsonObject, stdout: TextIO) -> None:
@@ -462,6 +487,26 @@ def _run_docling(args: argparse.Namespace, context: CommandContext) -> JsonObjec
         return _response_json(response, action)
 
 
+def _run_searxng(args: argparse.Namespace, context: CommandContext) -> JsonObject:
+    query = args.query.strip()
+    if not query:
+        raise CliError(
+            "invalid_query",
+            "query must not be empty",
+            details={"query": args.query},
+        )
+
+    request_payload: JsonObject = {"query": query}
+    for field_name in ("limit", "language", "time_range", "safe_search", "page"):
+        value = getattr(args, field_name)
+        if value is not None:
+            request_payload[field_name] = value
+
+    with context.client_factory(args.api_url, args.timeout, _auth_headers()) as client:
+        response = client.post("/v1/searxng/search", json=request_payload)
+        return _response_json(response, "search with SearXNG")
+
+
 def _add_convertx_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     parser = subparsers.add_parser(
         "convertx",
@@ -588,6 +633,39 @@ def _add_docling_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     parser.set_defaults(handler=_run_docling)
 
 
+def _add_searxng_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    parser = subparsers.add_parser(
+        "searxng",
+        help="Search the web through the local SearXNG backend.",
+    )
+    parser.add_argument("--limit", type=_parse_positive_int, help="Maximum number of results to return.")
+    parser.add_argument("--language", help="Optional SearXNG language code.")
+    parser.add_argument(
+        "--time-range",
+        type=_parse_time_range,
+        help="Optional SearXNG time range filter.",
+    )
+    parser.add_argument(
+        "--safe-search",
+        type=_parse_safe_search,
+        help="Safe search mode: off, moderate, or strict.",
+    )
+    parser.add_argument("--page", type=_parse_positive_int, help="Result page number, starting at 1.")
+    parser.add_argument("query")
+    parser.add_argument(
+        "--api-url",
+        default=os.getenv("TOOLHUB_API_URL", DEFAULT_API_URL),
+        help=f"Toolhub REST API URL. Defaults to TOOLHUB_API_URL or {DEFAULT_API_URL}.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=_parse_timeout,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help=f"HTTP timeout in seconds. Defaults to {DEFAULT_TIMEOUT_SECONDS:g}.",
+    )
+    parser.set_defaults(handler=_run_searxng)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = JsonArgumentParser(
         prog="tool-call",
@@ -596,6 +674,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="tool", required=True)
     _add_convertx_parser(subparsers)
     _add_docling_parser(subparsers)
+    _add_searxng_parser(subparsers)
     _add_webcapture_parser(subparsers)
     return parser
 

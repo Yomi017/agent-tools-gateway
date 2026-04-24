@@ -9,6 +9,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .tools.searxng.models import normalize_safe_search
+
 
 DEFAULT_GATEWAY_ROOT = Path(
     os.getenv("TOOLHUB_ROOT", "/home/shinku/data/service/tool/agent-tools-gateway")
@@ -20,6 +22,7 @@ DEFAULT_DOCLING_HOME = DEFAULT_TOOLS_ROOT / "Docling"
 DEFAULT_DOCLING_WORK_ROOT = DEFAULT_DOCLING_HOME / "work"
 DEFAULT_WEBCAPTURE_HOME = DEFAULT_TOOLS_ROOT / "WebCapture"
 DEFAULT_WEBCAPTURE_WORK_ROOT = DEFAULT_WEBCAPTURE_HOME / "work"
+DEFAULT_SEARXNG_HOME = DEFAULT_TOOLS_ROOT / "SearXNG"
 
 
 def _split_paths(value: str) -> list[str]:
@@ -175,11 +178,39 @@ class DoclingBackendConfig(BaseModel):
         return _coerce_path_list(value)
 
 
+class SearXNGBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    base_url: str | None = None
+    default_limit: int | None = None
+    max_limit: int | None = None
+    default_language: str | None = None
+    default_safe_search: str | None = None
+
+    @field_validator("default_limit", "max_limit")
+    @classmethod
+    def _validate_positive_ints(cls, value: int | None, info) -> int | None:
+        if value is None:
+            return None
+        if value <= 0:
+            raise ValueError(f"{info.field_name} must be greater than 0")
+        return value
+
+    @field_validator("default_safe_search")
+    @classmethod
+    def _validate_safe_search(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_safe_search(value)
+
+
 class BackendsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     convertx: ConvertXBackendConfig = Field(default_factory=ConvertXBackendConfig)
     docling: DoclingBackendConfig = Field(default_factory=DoclingBackendConfig)
+    searxng: SearXNGBackendConfig = Field(default_factory=SearXNGBackendConfig)
     webcapture: WebCaptureBackendConfig = Field(default_factory=WebCaptureBackendConfig)
 
 
@@ -254,6 +285,22 @@ class DoclingRuntimeSettings(BaseModel):
         self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
         for root in [*self.allowed_input_roots, *self.allowed_output_roots, self.temp_root]:
             root.expanduser().mkdir(parents=True, exist_ok=True)
+
+
+class SearXNGRuntimeSettings(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:8080"
+    default_limit: int = Field(default=5, gt=0)
+    max_limit: int = Field(default=10, gt=0)
+    default_language: str = "auto"
+    default_safe_search: str = "moderate"
+    request_timeout_seconds: float = 120.0
+    connect_timeout_seconds: float = 30.0
+
+    @field_validator("default_safe_search")
+    @classmethod
+    def _validate_safe_search(cls, value: str) -> str:
+        return normalize_safe_search(value)
 
 
 class Settings(BaseSettings):
@@ -395,6 +442,20 @@ class Settings(BaseSettings):
         if runtime.enabled:
             runtime.ensure_directories()
         return runtime
+
+    def searxng(self) -> SearXNGRuntimeSettings:
+        backend = self.backends.searxng
+
+        return SearXNGRuntimeSettings(
+            enabled=backend.enabled,
+            base_url=backend.base_url or "http://127.0.0.1:8080",
+            default_limit=backend.default_limit if backend.default_limit is not None else 5,
+            max_limit=backend.max_limit if backend.max_limit is not None else 10,
+            default_language=backend.default_language or "auto",
+            default_safe_search=backend.default_safe_search or "moderate",
+            request_timeout_seconds=self.request_timeout_seconds,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+        )
 
     def ensure_directories(self) -> None:
         if self.backends.convertx.enabled:

@@ -33,6 +33,12 @@ def test_registry_discovers_enabled_docling_backend(docling_settings) -> None:
     assert [backend.key for backend in backends] == ["convertx", "docling"]
 
 
+def test_registry_discovers_enabled_searxng_backend(searxng_settings) -> None:
+    backends = get_enabled_backends(searxng_settings)
+
+    assert [backend.key for backend in backends] == ["convertx", "searxng"]
+
+
 def test_registry_skips_disabled_backend() -> None:
     settings = Settings(backends={"convertx": {"enabled": False}})
 
@@ -92,6 +98,16 @@ def test_mcp_registers_docling_tools(docling_settings) -> None:
         "docling_health",
         "docling_check_file",
         "docling_convert_file",
+    }.issubset(names)
+
+
+def test_mcp_registers_searxng_tools(searxng_settings) -> None:
+    mcp = create_mcp(searxng_settings)
+    names = set(mcp._tool_manager._tools)
+
+    assert {
+        "searxng_health",
+        "searxng_search",
     }.issubset(names)
 
 
@@ -192,6 +208,33 @@ async def test_health_route_includes_docling_backend(docling_settings, monkeypat
     assert payload["ok"] is True
     assert payload["backends"]["docling"]["reachable"] is True
     assert payload["backends"]["docling"]["version"]["version"] == "1.16.1"
+
+
+@pytest.mark.asyncio
+async def test_health_route_includes_searxng_backend(searxng_settings, monkeypatch) -> None:
+    async def fake_health(_settings=None):
+        return HealthResponse(
+            backends={
+                "convertx": {"reachable": True, "base_url": "http://convertx.test"},
+                "searxng": {
+                    "reachable": True,
+                    "base_url": "http://searxng.test",
+                    "instance_name": "Toolhub Search",
+                    "enabled_engines": ["duckduckgo", "brave"],
+                },
+            }
+        )
+
+    monkeypatch.setattr("toolhub.api.health", fake_health)
+
+    app = create_app(searxng_settings)
+    route = next(route for route in app.routes if getattr(route, "path", None) == "/health")
+    response = await route.endpoint()
+
+    payload = json.loads(response.body)
+    assert payload["ok"] is True
+    assert payload["backends"]["searxng"]["reachable"] is True
+    assert payload["backends"]["searxng"]["enabled_engines"] == ["duckduckgo", "brave"]
 
 
 @pytest.mark.asyncio

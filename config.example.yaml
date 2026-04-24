@@ -30,6 +30,13 @@ backends:
     allowed_output_roots:
       - "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"
     temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
+  searxng:
+    enabled: false
+    base_url: "http://127.0.0.1:8080"
+    default_limit: 5
+    max_limit: 10
+    default_language: "auto"
+    default_safe_search: "moderate"
   webcapture:
     enabled: false
     base_url: "http://127.0.0.1:3001"

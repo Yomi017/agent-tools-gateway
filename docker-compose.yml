@@ -2,11 +2,11 @@ x-proxy-env: &proxy_env
   HTTP_PROXY: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   HTTPS_PROXY: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   ALL_PROXY: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
   http_proxy: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   https_proxy: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   all_proxy: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
 
 x-host-gateway: &host_gateway
   - "host.docker.internal:host-gateway"
@@ -18,6 +18,20 @@ x-webcapture-dns: &webcapture_dns
   dns_search: []
 
 services:
+  searxng:
+    <<: *webcapture_dns
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    extra_hosts: *host_gateway
+    environment:
+      <<: *proxy_env
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-change-me-searxng-secret}"
+    volumes:
+      - ./tools/SearXNG/config/settings.yml:/etc/searxng/settings.yml:ro
+      - ./tools/SearXNG/data:/var/cache/searxng
+
   convertx:
     image: ghcr.io/c4illin/convertx:v0.17.0
     container_name: convertx
@@ -77,6 +91,7 @@ services:
     restart: unless-stopped
     command: ["toolhub-api"]
     depends_on:
+      - searxng
       - convertx
       - docling
       - browserless
@@ -99,6 +114,12 @@ services:
       TOOLHUB_BACKENDS__DOCLING__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input"]'
       TOOLHUB_BACKENDS__DOCLING__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"]'
       TOOLHUB_BACKENDS__DOCLING__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
+      TOOLHUB_BACKENDS__SEARXNG__ENABLED: "true"
+      TOOLHUB_BACKENDS__SEARXNG__BASE_URL: "http://searxng:8080"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LIMIT: "5"
+      TOOLHUB_BACKENDS__SEARXNG__MAX_LIMIT: "10"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LANGUAGE: "auto"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_SAFE_SEARCH: "moderate"
       TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
       TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
       TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"
@@ -116,6 +137,7 @@ services:
     restart: unless-stopped
     command: ["toolhub-mcp-http"]
     depends_on:
+      - searxng
       - convertx
       - docling
       - browserless
@@ -138,6 +160,12 @@ services:
       TOOLHUB_BACKENDS__DOCLING__ALLOWED_INPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/input"]'
       TOOLHUB_BACKENDS__DOCLING__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/output"]'
       TOOLHUB_BACKENDS__DOCLING__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work/tmp"
+      TOOLHUB_BACKENDS__SEARXNG__ENABLED: "true"
+      TOOLHUB_BACKENDS__SEARXNG__BASE_URL: "http://searxng:8080"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LIMIT: "5"
+      TOOLHUB_BACKENDS__SEARXNG__MAX_LIMIT: "10"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_LANGUAGE: "auto"
+      TOOLHUB_BACKENDS__SEARXNG__DEFAULT_SAFE_SEARCH: "moderate"
       TOOLHUB_BACKENDS__WEBCAPTURE__ENABLED: "true"
       TOOLHUB_BACKENDS__WEBCAPTURE__BASE_URL: "http://browserless:3000"
       TOOLHUB_BACKENDS__WEBCAPTURE__TOKEN: "${BROWSERLESS_TOKEN:-change-me-browserless-token}"

@@ -731,3 +731,85 @@ def test_docling_convert_posts_expected_payload(
         "include_images": True,
     }
     assert payload["task_id"] == "task-123"
+
+
+def test_searxng_empty_query_fails_before_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("API should not be called")
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "searxng",
+            "   ",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 1
+    assert requests == []
+    assert payload["error"]["code"] == "invalid_query"
+
+
+def test_searxng_search_posts_expected_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/searxng/search"
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "backend": "searxng",
+                "query": "openai gpt-5.5",
+                "result_count": 1,
+                "results": [
+                    {
+                        "title": "OpenAI launches GPT-5.5",
+                        "url": "https://example.com/gpt-5-5",
+                        "snippet": "Launch details",
+                        "engine": "brave",
+                        "position": 1,
+                    }
+                ],
+                "effective_options": {
+                    "limit": 3,
+                    "language": "zh-CN",
+                    "safe_search": "moderate",
+                    "page": 2,
+                    "time_range": "day",
+                },
+                "warnings": {"unresponsive_engines": ["duckduckgo: timeout"]},
+                "duration_ms": 18,
+            },
+        )
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "searxng",
+            "--limit",
+            "3",
+            "--language",
+            "zh-CN",
+            "--time-range",
+            "day",
+            "--safe-search",
+            "moderate",
+            "--page",
+            "2",
+            "openai gpt-5.5",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 0
+    assert [request.url.path for request in requests] == ["/v1/searxng/search"]
+    assert json.loads(requests[0].content) == {
+        "query": "openai gpt-5.5",
+        "limit": 3,
+        "language": "zh-CN",
+        "time_range": "day",
+        "safe_search": "moderate",
+        "page": 2,
+    }
+    assert payload["result_count"] == 1
+    assert payload["results"][0]["engine"] == "brave"
