@@ -13,12 +13,19 @@ def settings(tmp_path: Path) -> Settings:
     input_root = convertx_work_root / "input"
     output_root = convertx_work_root / "output"
     temp_root = convertx_work_root / "tmp"
+    docling_work_root = tmp_path / "tools" / "Docling" / "work"
+    docling_input_root = docling_work_root / "input"
+    docling_output_root = docling_work_root / "output"
+    docling_temp_root = docling_work_root / "tmp"
     webcapture_work_root = tmp_path / "tools" / "WebCapture" / "work"
     webcapture_output_root = webcapture_work_root / "output"
     webcapture_temp_root = webcapture_work_root / "tmp"
     input_root.mkdir(parents=True)
     output_root.mkdir(parents=True)
     temp_root.mkdir(parents=True)
+    docling_input_root.mkdir(parents=True)
+    docling_output_root.mkdir(parents=True)
+    docling_temp_root.mkdir(parents=True)
     webcapture_output_root.mkdir(parents=True)
     webcapture_temp_root.mkdir(parents=True)
     return Settings(
@@ -29,6 +36,23 @@ def settings(tmp_path: Path) -> Settings:
                 "allowed_input_roots": [input_root],
                 "allowed_output_roots": [output_root],
                 "temp_root": temp_root,
+            },
+            "docling": {
+                "enabled": False,
+                "base_url": "http://docling.test",
+                "api_key": "docling-token",
+                "work_root": docling_work_root,
+                "allowed_input_roots": [docling_input_root],
+                "allowed_output_roots": [docling_output_root],
+                "temp_root": docling_temp_root,
+            },
+            "searxng": {
+                "enabled": False,
+                "base_url": "http://searxng.test",
+                "default_limit": 5,
+                "max_limit": 10,
+                "default_language": "auto",
+                "default_safe_search": "moderate",
             },
             "webcapture": {
                 "enabled": False,
@@ -45,6 +69,75 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
+def docling_settings(settings: Settings) -> Settings:
+    convertx = settings.convertx()
+    docling = settings.docling()
+    return Settings(
+        backends={
+            "convertx": {
+                "base_url": convertx.base_url,
+                "work_root": convertx.work_root,
+                "allowed_input_roots": convertx.allowed_input_roots,
+                "allowed_output_roots": convertx.allowed_output_roots,
+                "temp_root": convertx.temp_root,
+            },
+            "docling": {
+                "enabled": True,
+                "base_url": docling.base_url,
+                "api_key": docling.api_key,
+                "work_root": docling.work_root,
+                "allowed_input_roots": docling.allowed_input_roots,
+                "allowed_output_roots": docling.allowed_output_roots,
+                "temp_root": docling.temp_root,
+            },
+        },
+        request_timeout_seconds=settings.request_timeout_seconds,
+        connect_timeout_seconds=settings.connect_timeout_seconds,
+        poll_interval_seconds=settings.poll_interval_seconds,
+        conversion_timeout_seconds=settings.conversion_timeout_seconds,
+        max_file_bytes=settings.max_file_bytes,
+    )
+
+
+@pytest.fixture
+def searxng_settings(settings: Settings) -> Settings:
+    convertx = settings.convertx()
+    searxng = settings.searxng()
+    return Settings(
+        backends={
+            "convertx": {
+                "base_url": convertx.base_url,
+                "work_root": convertx.work_root,
+                "allowed_input_roots": convertx.allowed_input_roots,
+                "allowed_output_roots": convertx.allowed_output_roots,
+                "temp_root": convertx.temp_root,
+            },
+            "docling": {
+                "base_url": settings.docling().base_url,
+                "api_key": settings.docling().api_key,
+                "work_root": settings.docling().work_root,
+                "allowed_input_roots": settings.docling().allowed_input_roots,
+                "allowed_output_roots": settings.docling().allowed_output_roots,
+                "temp_root": settings.docling().temp_root,
+            },
+            "searxng": {
+                "enabled": True,
+                "base_url": searxng.base_url,
+                "default_limit": searxng.default_limit,
+                "max_limit": searxng.max_limit,
+                "default_language": searxng.default_language,
+                "default_safe_search": searxng.default_safe_search,
+            },
+        },
+        request_timeout_seconds=settings.request_timeout_seconds,
+        connect_timeout_seconds=settings.connect_timeout_seconds,
+        poll_interval_seconds=settings.poll_interval_seconds,
+        conversion_timeout_seconds=settings.conversion_timeout_seconds,
+        max_file_bytes=settings.max_file_bytes,
+    )
+
+
+@pytest.fixture
 def webcapture_settings(settings: Settings) -> Settings:
     convertx = settings.convertx()
     webcapture = settings.webcapture()
@@ -56,6 +149,21 @@ def webcapture_settings(settings: Settings) -> Settings:
                 "allowed_input_roots": convertx.allowed_input_roots,
                 "allowed_output_roots": convertx.allowed_output_roots,
                 "temp_root": convertx.temp_root,
+            },
+            "docling": {
+                "base_url": settings.docling().base_url,
+                "api_key": settings.docling().api_key,
+                "work_root": settings.docling().work_root,
+                "allowed_input_roots": settings.docling().allowed_input_roots,
+                "allowed_output_roots": settings.docling().allowed_output_roots,
+                "temp_root": settings.docling().temp_root,
+            },
+            "searxng": {
+                "base_url": settings.searxng().base_url,
+                "default_limit": settings.searxng().default_limit,
+                "max_limit": settings.searxng().max_limit,
+                "default_language": settings.searxng().default_language,
+                "default_safe_search": settings.searxng().default_safe_search,
             },
             "webcapture": {
                 "enabled": True,

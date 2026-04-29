@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 
 from ...config import WebCaptureRuntimeSettings
-from ...errors import UpstreamError, UrlNotAllowedError
+from ...errors import CaptureLimitError, UpstreamError, UrlNotAllowedError
 from ...security import Resolver, resolve_host_addresses, validate_web_url
 from .models import normalize_capture_format, normalize_wait_until
 
@@ -54,9 +54,11 @@ class PlaywrightCaptureSession:
             viewport={
                 "width": self.settings.viewport_width,
                 "height": self.settings.viewport_height,
-            }
+            },
+            service_workers="block",
         )
         await self._context.route("**/*", self._route_request)
+        await self._context.route_web_socket("**/*", self._route_web_socket)
         self._page = await self._context.new_page()
         return self
 
@@ -115,6 +117,57 @@ class PlaywrightCaptureSession:
             return
         await route.continue_()
 
+    async def _route_web_socket(self, web_socket_route: Any) -> None:
+        try:
+            validate_web_url(
+                web_socket_route.url,
+                block_private_networks=self.settings.block_private_networks,
+                resolver=self.resolver,
+                allowed_schemes=("ws", "wss"),
+            )
+        except Exception as exc:
+            reason = str(exc)
+            if isinstance(exc, UrlNotAllowedError):
+                reason = str(exc.details.get("reason") or reason)
+            self.blocked_requests.append(
+                BlockedRequest(
+                    url=web_socket_route.url,
+                    resource_type="websocket",
+                    reason=reason,
+                )
+            )
+            await web_socket_route.close(code=1008, reason="Blocked by web capture policy")
+            return
+        await web_socket_route.connect_to_server()
+
+    async def _page_height_px(self) -> int:
+        height = await self._page.evaluate(
+            """
+            () => Math.max(
+              document.body?.scrollHeight ?? 0,
+              document.documentElement?.scrollHeight ?? 0,
+              document.body?.offsetHeight ?? 0,
+              document.documentElement?.offsetHeight ?? 0,
+              document.body?.clientHeight ?? 0,
+              document.documentElement?.clientHeight ?? 0
+            )
+            """
+        )
+        return max(int(height or 0), 0)
+
+    def _enforce_capture_size(self, *, content: bytes, output_format: str) -> None:
+        actual = len(content)
+        if actual <= self.settings.max_capture_bytes:
+            return
+        raise CaptureLimitError(
+            "Captured artifact exceeds max_capture_bytes.",
+            details={
+                "output_format": output_format,
+                "limit": self.settings.max_capture_bytes,
+                "actual": actual,
+            },
+        )
+
     async def capture(
         self,
         *,
@@ -125,6 +178,7 @@ class PlaywrightCaptureSession:
     ) -> CaptureArtifact:
         navigation_wait = normalize_wait_until(wait_until or DEFAULT_WAIT_UNTIL)
         capture_format = normalize_capture_format(output_format)
+        capture_full_page = capture_format == "png" and (True if full_page is None else full_page)
 
         try:
             response = await self._page.goto(
@@ -159,9 +213,21 @@ class PlaywrightCaptureSession:
                 prefer_css_page_size=True,
             )
         elif capture_format == "png":
+            if capture_full_page:
+                page_height_px = await self._page_height_px()
+                if page_height_px > self.settings.max_full_page_height_px:
+                    raise CaptureLimitError(
+                        "Full-page screenshot exceeds max_full_page_height_px.",
+                        details={
+                            "output_format": capture_format,
+                            "limit": self.settings.max_full_page_height_px,
+                            "actual": page_height_px,
+                            "page_height_px": page_height_px,
+                        },
+                    )
             content = await self._page.screenshot(
                 type="png",
-                full_page=True if full_page is None else full_page,
+                full_page=capture_full_page,
             )
         else:
             html = await self._page.content()
@@ -170,6 +236,8 @@ class PlaywrightCaptureSession:
                 source_url=final_url,
                 title=title,
             ).encode("utf-8")
+
+        self._enforce_capture_size(content=content, output_format=capture_format)
 
         return CaptureArtifact(
             content=content,

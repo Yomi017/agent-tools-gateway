@@ -590,3 +590,226 @@ def test_webcapture_capture_posts_expected_payload(
         "full_page": False,
     }
     assert payload["output"]["filename"] == "example-home.png"
+
+
+def test_docling_missing_input_fails_before_api(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("API should not be called")
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "docling",
+            str(tmp_path / "missing.pdf"),
+            "md",
+            str(tmp_path / "output"),
+            "false",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 1
+    assert requests == []
+    assert payload["error"]["code"] == "input_not_found"
+
+
+def test_docling_check_posts_expected_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "sample.pdf"
+    input_path.write_bytes(b"%PDF-1.7 fake")
+    output_dir = tmp_path / "output"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/docling/check"
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "backend": "docling",
+                "check": True,
+                "input_path": str(input_path.resolve()),
+                "planned_output_path": str(output_dir / "lecture.md"),
+                "effective_options": {
+                    "output_format": "md",
+                    "do_ocr": True,
+                    "table_mode": "accurate",
+                },
+            },
+        )
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "docling",
+            "--check",
+            "--name",
+            "lecture",
+            "--do-ocr",
+            "true",
+            "--table-mode",
+            "accurate",
+            str(input_path),
+            "md",
+            str(output_dir),
+            "false",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 0
+    assert [request.url.path for request in requests] == ["/v1/docling/check"]
+    assert json.loads(requests[0].content) == {
+        "input_path": str(input_path.resolve()),
+        "output_format": "md",
+        "output_dir": str(output_dir.resolve(strict=False)),
+        "overwrite": False,
+        "filename_stem": "lecture",
+        "do_ocr": True,
+        "table_mode": "accurate",
+    }
+    assert payload["planned_output_path"].endswith("/lecture.md")
+
+
+def test_docling_convert_posts_expected_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "sample.pdf"
+    input_path.write_bytes(b"%PDF-1.7 fake")
+    output_dir = tmp_path / "output"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/docling/convert"
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "backend": "docling",
+                "input_path": str(input_path.resolve()),
+                "output_format": "html",
+                "task_id": "task-123",
+                "output": {
+                    "path": str(output_dir / "lecture.html"),
+                    "filename": "lecture.html",
+                },
+                "duration_ms": 21,
+            },
+        )
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "docling",
+            "--name",
+            "lecture",
+            "--include-images",
+            "true",
+            "--pdf-backend",
+            "dlparse_v4",
+            str(input_path),
+            "html",
+            str(output_dir),
+            "true",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 0
+    assert [request.url.path for request in requests] == ["/v1/docling/convert"]
+    assert json.loads(requests[0].content) == {
+        "input_path": str(input_path.resolve()),
+        "output_format": "html",
+        "output_dir": str(output_dir.resolve(strict=False)),
+        "overwrite": True,
+        "filename_stem": "lecture",
+        "pdf_backend": "dlparse_v4",
+        "include_images": True,
+    }
+    assert payload["task_id"] == "task-123"
+
+
+def test_searxng_empty_query_fails_before_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("API should not be called")
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "searxng",
+            "   ",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 1
+    assert requests == []
+    assert payload["error"]["code"] == "invalid_query"
+
+
+def test_searxng_search_posts_expected_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/searxng/search"
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "backend": "searxng",
+                "query": "openai gpt-5.5",
+                "result_count": 1,
+                "results": [
+                    {
+                        "title": "OpenAI launches GPT-5.5",
+                        "url": "https://example.com/gpt-5-5",
+                        "snippet": "Launch details",
+                        "engine": "brave",
+                        "position": 1,
+                    }
+                ],
+                "effective_options": {
+                    "limit": 3,
+                    "language": "zh-CN",
+                    "safe_search": "moderate",
+                    "page": 2,
+                    "time_range": "day",
+                },
+                "warnings": {"unresponsive_engines": ["duckduckgo: timeout"]},
+                "duration_ms": 18,
+            },
+        )
+
+    exit_code, payload, requests, _headers = _run_cli(
+        [
+            "searxng",
+            "--limit",
+            "3",
+            "--language",
+            "zh-CN",
+            "--time-range",
+            "day",
+            "--safe-search",
+            "moderate",
+            "--page",
+            "2",
+            "openai gpt-5.5",
+        ],
+        handler=handler,
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 0
+    assert [request.url.path for request in requests] == ["/v1/searxng/search"]
+    assert json.loads(requests[0].content) == {
+        "query": "openai gpt-5.5",
+        "limit": 3,
+        "language": "zh-CN",
+        "time_range": "day",
+        "safe_search": "moderate",
+        "page": 2,
+    }
+    assert payload["result_count"] == 1
+    assert payload["results"][0]["engine"] == "brave"

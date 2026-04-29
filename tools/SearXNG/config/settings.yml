@@ -1,0 +1,24 @@
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  public_instance: false
+  limiter: false
+  image_proxy: false
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "${SEARXNG_SECRET}"
+
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false

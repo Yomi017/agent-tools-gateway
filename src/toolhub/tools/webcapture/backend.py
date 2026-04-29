@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from ...config import Settings, WebCaptureRuntimeSettings, get_settings
 from ...errors import error_payload
 from ...models import OutputFile
-from ...security import WebCapturePathPolicy, validate_web_url
+from ...security import WebCapturePathPolicy, safe_write_output_file, validate_web_url
 from .client import DEFAULT_WAIT_UNTIL, WebCaptureClient
 from .models import CaptureRequest, CaptureSuccess, CheckSuccess, NavigationStatus
 
@@ -105,7 +105,7 @@ async def capture_url(
         full_page=full_page,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(artifact.content)
+    safe_write_output_file(output_path, artifact.content, overwrite=overwrite)
 
     return CaptureSuccess(
         requested_url=url,

@@ -12,4 +12,7 @@ build/
 config.yaml
 tools/*/work/
 tools/*/data/
+!tools/SearXNG/data/
+tools/SearXNG/data/*
+!tools/SearXNG/data/.gitkeep
 tests/test_image/
