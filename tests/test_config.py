@@ -23,6 +23,14 @@ def _webcapture_paths(root: Path) -> tuple[Path, Path, Path]:
     return work_root, output_root, temp_root
 
 
+def _windesktop_paths(root: Path) -> tuple[Path, Path, Path, Path]:
+    work_root = root / "tools" / "WinDesktop" / "work"
+    output_root = work_root / "output"
+    bridge_output_root = work_root / "bridge-output"
+    temp_root = work_root / "tmp"
+    return work_root, output_root, bridge_output_root, temp_root
+
+
 def _searxng_settings_values() -> dict[str, object]:
     return {
         "base_url": "http://searxng.test",
@@ -213,6 +221,16 @@ def test_webcapture_backend_defaults_to_disabled() -> None:
     runtime = settings.webcapture()
 
     assert runtime.enabled is False
+
+
+def test_windesktop_backend_defaults_to_disabled() -> None:
+    settings = Settings()
+
+    runtime = settings.windesktop()
+
+    assert runtime.enabled is False
+    assert runtime.base_url == "http://127.0.0.1:18787"
+    assert runtime.max_screenshot_bytes == 64 * 1024 * 1024
 
 
 def test_searxng_backend_defaults_to_disabled() -> None:
@@ -409,6 +427,84 @@ def test_webcapture_enabled_creates_directories(tmp_path: Path) -> None:
     assert temp_root.is_dir()
 
 
+def test_backend_scoped_windesktop_config_is_used(tmp_path: Path) -> None:
+    work_root, output_root, bridge_output_root, temp_root = _windesktop_paths(tmp_path)
+    settings = Settings(
+        backends={
+            "windesktop": {
+                "enabled": True,
+                "base_url": "http://windesktop.test",
+                "token": "secret-token",
+                "work_root": work_root,
+                "allowed_output_roots": [output_root],
+                "bridge_output_root": bridge_output_root,
+                "temp_root": temp_root,
+                "max_screenshot_bytes": 2048,
+            }
+        }
+    )
+
+    runtime = settings.windesktop()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://windesktop.test"
+    assert runtime.token == "secret-token"
+    assert runtime.work_root == work_root
+    assert runtime.allowed_output_roots == [output_root]
+    assert runtime.bridge_output_root == bridge_output_root
+    assert runtime.temp_root == temp_root
+    assert runtime.max_screenshot_bytes == 2048
+
+
+def test_load_settings_reads_windesktop_env(monkeypatch, tmp_path: Path) -> None:
+    work_root, output_root, bridge_output_root, temp_root = _windesktop_paths(tmp_path / "env")
+    config_path = tmp_path / "missing.yaml"
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__ENABLED", "true")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__BASE_URL", "http://windesktop.env")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__TOKEN", "secret-token")
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__WORK_ROOT", str(work_root))
+    monkeypatch.setenv(
+        "TOOLHUB_BACKENDS__WINDESKTOP__ALLOWED_OUTPUT_ROOTS",
+        f'["{output_root}"]',
+    )
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__BRIDGE_OUTPUT_ROOT", str(bridge_output_root))
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__TEMP_ROOT", str(temp_root))
+    monkeypatch.setenv("TOOLHUB_BACKENDS__WINDESKTOP__MAX_SCREENSHOT_BYTES", "4096")
+
+    runtime = load_settings(config_path).windesktop()
+
+    assert runtime.enabled is True
+    assert runtime.base_url == "http://windesktop.env"
+    assert runtime.token == "secret-token"
+    assert runtime.work_root == work_root
+    assert runtime.allowed_output_roots == [output_root]
+    assert runtime.bridge_output_root == bridge_output_root
+    assert runtime.temp_root == temp_root
+    assert runtime.max_screenshot_bytes == 4096
+
+
+def test_windesktop_enabled_creates_directories(tmp_path: Path) -> None:
+    work_root, output_root, bridge_output_root, temp_root = _windesktop_paths(tmp_path / "dirs")
+    settings = Settings(
+        backends={
+            "windesktop": {
+                "enabled": True,
+                "work_root": work_root,
+                "allowed_output_roots": [output_root],
+                "bridge_output_root": bridge_output_root,
+                "temp_root": temp_root,
+            }
+        }
+    )
+
+    settings.ensure_directories()
+
+    assert work_root.is_dir()
+    assert output_root.is_dir()
+    assert bridge_output_root.is_dir()
+    assert temp_root.is_dir()
+
+
 def test_browserless_has_no_host_gateway_mapping_in_compose() -> None:
     compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml"
     compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
@@ -435,3 +531,28 @@ def test_searxng_is_present_in_compose_and_no_proxy() -> None:
     assert services["toolhub-mcp"]["environment"]["TOOLHUB_BACKENDS__SEARXNG__ENABLED"] == "true"
     assert "searxng" in compose["x-proxy-env"]["NO_PROXY"]
     assert "searxng" in compose["x-proxy-env"]["no_proxy"]
+
+
+def test_windesktop_compose_is_opt_in_and_bypasses_proxy() -> None:
+    compose_path = Path(__file__).resolve().parents[1] / "docker-compose.yml"
+    compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    services = compose["services"]
+
+    assert "192.168.23.128" in compose["x-proxy-env"]["NO_PROXY"]
+    assert "192.168.23.128" in compose["x-proxy-env"]["no_proxy"]
+    assert (
+        services["toolhub-api"]["environment"]["TOOLHUB_BACKENDS__WINDESKTOP__ENABLED"]
+        == "${TOOLHUB_WINDESKTOP_ENABLED:-false}"
+    )
+    assert (
+        services["toolhub-api"]["environment"]["TOOLHUB_BACKENDS__WINDESKTOP__BASE_URL"]
+        == "${TOOLHUB_WINDESKTOP_BASE_URL:-http://192.168.23.128:18787}"
+    )
+    assert (
+        services["toolhub-api"]["environment"]["TOOLHUB_BACKENDS__WINDESKTOP__BRIDGE_OUTPUT_ROOT"]
+        == "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/bridge-output"
+    )
+    assert (
+        services["toolhub-mcp"]["environment"]["TOOLHUB_BACKENDS__WINDESKTOP__ENABLED"]
+        == "${TOOLHUB_WINDESKTOP_ENABLED:-false}"
+    )

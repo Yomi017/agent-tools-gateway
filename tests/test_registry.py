@@ -39,6 +39,12 @@ def test_registry_discovers_enabled_searxng_backend(searxng_settings) -> None:
     assert [backend.key for backend in backends] == ["convertx", "searxng"]
 
 
+def test_registry_discovers_enabled_windesktop_backend(windesktop_settings) -> None:
+    backends = get_enabled_backends(windesktop_settings)
+
+    assert [backend.key for backend in backends] == ["convertx", "windesktop"]
+
+
 def test_registry_skips_disabled_backend() -> None:
     settings = Settings(backends={"convertx": {"enabled": False}})
 
@@ -108,6 +114,21 @@ def test_mcp_registers_searxng_tools(searxng_settings) -> None:
     assert {
         "searxng_health",
         "searxng_search",
+    }.issubset(names)
+
+
+def test_mcp_registers_windesktop_tools(windesktop_settings) -> None:
+    mcp = create_mcp(windesktop_settings)
+    names = set(mcp._tool_manager._tools)
+
+    assert {
+        "windesktop_health",
+        "windesktop_list_windows",
+        "windesktop_screenshot",
+        "windesktop_focus_window",
+        "windesktop_click",
+        "windesktop_type",
+        "windesktop_hotkey",
     }.issubset(names)
 
 

@@ -159,6 +159,39 @@ curl http://127.0.0.1:8765/health
 - WebCapture 的浏览器上下文会固定禁用 Service Worker，并对 WebSocket URL 继续套用同一套公网校验，避免绕过现有 SSRF 防护。
 - WebCapture 默认还有两条保守资源限制：`max_capture_bytes=67108864`、`max_full_page_height_px=20000`。超限时会直接返回 `capture_limit_exceeded`，不会写出部分产物。
 
+## WinDesktop VM 桥
+
+WinDesktop 是给专用 Windows 11 VMware 客户机用的桌面桥。默认不开启；开启后 ToolHub 暴露只读检查工具和需要人工确认的输入原语：
+
+- `windesktop_health`
+- `windesktop_list_windows`
+- `windesktop_screenshot`
+- `windesktop_focus_window`
+- `windesktop_click`
+- `windesktop_type`
+- `windesktop_hotkey`
+
+其中 `health`、`list_windows`、`screenshot` 可以作为只读动作直接使用；`focus_window`、`click`、`type`、`hotkey` 会改变 VM 桌面状态，Hermes 调用前必须先让操作者确认具体动作。这个后端只用于专用 Windows VM，不应该指向宿主机真实桌面，也不支持游戏自动化或反作弊场景。
+
+在 VM 里通过共享目录复制 `tools/WinDesktop/bridge`，然后在该目录运行：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\run.ps1
+```
+
+桥默认监听 `0.0.0.0:18787`。Windows 防火墙弹窗时，只允许专用网络即可。
+
+宿主侧启用 ToolHub 后端：
+
+```bash
+export TOOLHUB_WINDESKTOP_ENABLED=true
+export TOOLHUB_WINDESKTOP_BASE_URL="http://192.168.23.128:18787"
+docker compose up -d --build toolhub-api toolhub-mcp
+```
+
+窗口标题默认会被 `windesktop_list_windows` 返回；如果要隐藏标题，显式传 `include_titles=false`。截图先由 VM 写入 `\\vmware-host\Shared Folders\HermesVMShare\WinDesktopOutput`，ToolHub 再从宿主侧 `/mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput` 取文件并写入 `tools/WinDesktop/work/output`，不会通过 HTTP 传原始图片字节。
+
 ## Docling 调试暴露
 
 默认栈不会开放 `127.0.0.1:5001`。如果你需要直接调 raw Docling，再显式叠加调试覆盖文件：

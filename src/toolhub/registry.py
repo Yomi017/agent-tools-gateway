@@ -8,9 +8,16 @@ from .tools.convertx.backend import BACKEND as CONVERTX_BACKEND
 from .tools.docling.backend import BACKEND as DOCLING_BACKEND
 from .tools.searxng.backend import BACKEND as SEARXNG_BACKEND
 from .tools.webcapture.backend import BACKEND as WEBCAPTURE_BACKEND
+from .tools.windesktop.backend import BACKEND as WINDESKTOP_BACKEND
 
 
-BACKENDS = (CONVERTX_BACKEND, DOCLING_BACKEND, WEBCAPTURE_BACKEND, SEARXNG_BACKEND)
+BACKENDS = (
+    CONVERTX_BACKEND,
+    DOCLING_BACKEND,
+    WEBCAPTURE_BACKEND,
+    SEARXNG_BACKEND,
+    WINDESKTOP_BACKEND,
+)
 
 
 def get_enabled_backends(settings: Settings | None = None) -> list[Any]:
