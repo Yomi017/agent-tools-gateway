@@ -2,11 +2,11 @@ x-proxy-env: &proxy_env
   HTTP_PROXY: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   HTTPS_PROXY: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   ALL_PROXY: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  NO_PROXY: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,192.168.23.128,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
   http_proxy: "${TOOLHUB_OUTBOUND_HTTP_PROXY:-}"
   https_proxy: "${TOOLHUB_OUTBOUND_HTTPS_PROXY:-}"
   all_proxy: "${TOOLHUB_OUTBOUND_ALL_PROXY:-}"
-  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
+  no_proxy: "${TOOLHUB_OUTBOUND_NO_PROXY:-localhost,127.0.0.1,192.168.23.128,convertx,docling,searxng,browserless,toolhub-api,toolhub-mcp,host.docker.internal}"
 
 x-host-gateway: &host_gateway
   - "host.docker.internal:host-gateway"
@@ -126,10 +126,19 @@ services:
       TOOLHUB_BACKENDS__WEBCAPTURE__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work"
       TOOLHUB_BACKENDS__WEBCAPTURE__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"]'
       TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
+      TOOLHUB_BACKENDS__WINDESKTOP__ENABLED: "${TOOLHUB_WINDESKTOP_ENABLED:-false}"
+      TOOLHUB_BACKENDS__WINDESKTOP__BASE_URL: "${TOOLHUB_WINDESKTOP_BASE_URL:-http://192.168.23.128:18787}"
+      TOOLHUB_BACKENDS__WINDESKTOP__TOKEN: "${WINDESKTOP_TOKEN:-}"
+      TOOLHUB_BACKENDS__WINDESKTOP__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work"
+      TOOLHUB_BACKENDS__WINDESKTOP__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/output"]'
+      TOOLHUB_BACKENDS__WINDESKTOP__BRIDGE_OUTPUT_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/bridge-output"
+      TOOLHUB_BACKENDS__WINDESKTOP__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
       - ./tools/Docling/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work
       - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work
+      - ./tools/WinDesktop/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work
+      - /mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput:/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/bridge-output
 
   toolhub-mcp:
     <<: *webcapture_dns
@@ -172,7 +181,16 @@ services:
       TOOLHUB_BACKENDS__WEBCAPTURE__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work"
       TOOLHUB_BACKENDS__WEBCAPTURE__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output"]'
       TOOLHUB_BACKENDS__WEBCAPTURE__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/tmp"
+      TOOLHUB_BACKENDS__WINDESKTOP__ENABLED: "${TOOLHUB_WINDESKTOP_ENABLED:-false}"
+      TOOLHUB_BACKENDS__WINDESKTOP__BASE_URL: "${TOOLHUB_WINDESKTOP_BASE_URL:-http://192.168.23.128:18787}"
+      TOOLHUB_BACKENDS__WINDESKTOP__TOKEN: "${WINDESKTOP_TOKEN:-}"
+      TOOLHUB_BACKENDS__WINDESKTOP__WORK_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work"
+      TOOLHUB_BACKENDS__WINDESKTOP__ALLOWED_OUTPUT_ROOTS: '["/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/output"]'
+      TOOLHUB_BACKENDS__WINDESKTOP__BRIDGE_OUTPUT_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/bridge-output"
+      TOOLHUB_BACKENDS__WINDESKTOP__TEMP_ROOT: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/tmp"
     volumes:
       - ./tools/ConvertX/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/ConvertX/work
       - ./tools/Docling/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/Docling/work
       - ./tools/WebCapture/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work
+      - ./tools/WinDesktop/work:/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work
+      - /mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput:/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/bridge-output

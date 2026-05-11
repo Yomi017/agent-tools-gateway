@@ -51,3 +51,13 @@ backends:
     viewport_height: 1024
     pdf_format: "A4"
     block_private_networks: true
+  windesktop:
+    enabled: false
+    base_url: "http://192.168.23.128:18787"
+    # token: "change-me-windesktop-token"
+    work_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work"
+    allowed_output_roots:
+      - "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/output"
+    bridge_output_root: "/mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput"
+    temp_root: "/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/tmp"
+    max_screenshot_bytes: 67108864

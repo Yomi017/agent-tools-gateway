@@ -20,6 +20,10 @@ def settings(tmp_path: Path) -> Settings:
     webcapture_work_root = tmp_path / "tools" / "WebCapture" / "work"
     webcapture_output_root = webcapture_work_root / "output"
     webcapture_temp_root = webcapture_work_root / "tmp"
+    windesktop_work_root = tmp_path / "tools" / "WinDesktop" / "work"
+    windesktop_output_root = windesktop_work_root / "output"
+    windesktop_bridge_output_root = windesktop_work_root / "bridge-output"
+    windesktop_temp_root = windesktop_work_root / "tmp"
     input_root.mkdir(parents=True)
     output_root.mkdir(parents=True)
     temp_root.mkdir(parents=True)
@@ -28,6 +32,9 @@ def settings(tmp_path: Path) -> Settings:
     docling_temp_root.mkdir(parents=True)
     webcapture_output_root.mkdir(parents=True)
     webcapture_temp_root.mkdir(parents=True)
+    windesktop_output_root.mkdir(parents=True)
+    windesktop_bridge_output_root.mkdir(parents=True)
+    windesktop_temp_root.mkdir(parents=True)
     return Settings(
         backends={
             "convertx": {
@@ -61,6 +68,15 @@ def settings(tmp_path: Path) -> Settings:
                 "work_root": webcapture_work_root,
                 "allowed_output_roots": [webcapture_output_root],
                 "temp_root": webcapture_temp_root,
+            },
+            "windesktop": {
+                "enabled": False,
+                "base_url": "http://windesktop.test",
+                "token": "windesktop-token",
+                "work_root": windesktop_work_root,
+                "allowed_output_roots": [windesktop_output_root],
+                "bridge_output_root": windesktop_bridge_output_root,
+                "temp_root": windesktop_temp_root,
             },
         },
         poll_interval_seconds=0.001,
@@ -172,6 +188,38 @@ def webcapture_settings(settings: Settings) -> Settings:
                 "work_root": webcapture.work_root,
                 "allowed_output_roots": webcapture.allowed_output_roots,
                 "temp_root": webcapture.temp_root,
+            },
+        },
+        request_timeout_seconds=settings.request_timeout_seconds,
+        connect_timeout_seconds=settings.connect_timeout_seconds,
+        poll_interval_seconds=settings.poll_interval_seconds,
+        conversion_timeout_seconds=settings.conversion_timeout_seconds,
+        max_file_bytes=settings.max_file_bytes,
+    )
+
+
+@pytest.fixture
+def windesktop_settings(settings: Settings) -> Settings:
+    convertx = settings.convertx()
+    windesktop = settings.windesktop()
+    return Settings(
+        backends={
+            "convertx": {
+                "base_url": convertx.base_url,
+                "work_root": convertx.work_root,
+                "allowed_input_roots": convertx.allowed_input_roots,
+                "allowed_output_roots": convertx.allowed_output_roots,
+                "temp_root": convertx.temp_root,
+            },
+            "windesktop": {
+                "enabled": True,
+                "base_url": windesktop.base_url,
+                "token": windesktop.token,
+                "work_root": windesktop.work_root,
+                "allowed_output_roots": windesktop.allowed_output_roots,
+                "bridge_output_root": windesktop.bridge_output_root,
+                "temp_root": windesktop.temp_root,
+                "max_screenshot_bytes": windesktop.max_screenshot_bytes,
             },
         },
         request_timeout_seconds=settings.request_timeout_seconds,

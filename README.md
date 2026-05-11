@@ -140,6 +140,12 @@ Web capture outputs are restricted to:
 /home/shinku/data/service/tool/agent-tools-gateway/tools/WebCapture/work/output
 ```
 
+WinDesktop screenshot outputs are restricted to:
+
+```text
+/home/shinku/data/service/tool/agent-tools-gateway/tools/WinDesktop/work/output
+```
+
 SearXNG runtime files live under:
 
 ```text
@@ -160,6 +166,49 @@ Browserless uses its own token:
 ```bash
 export BROWSERLESS_TOKEN="change-me-browserless-token"
 ```
+
+## WinDesktop VM Bridge
+
+WinDesktop is an opt-in backend for the dedicated Windows 11 VMware guest. The
+default surface includes read-only inspection plus explicit, user-approved input
+primitives:
+
+- `windesktop_health`
+- `windesktop_list_windows`
+- `windesktop_screenshot`
+- `windesktop_focus_window`
+- `windesktop_click`
+- `windesktop_type`
+- `windesktop_hotkey`
+
+Only `health`, `list_windows`, and `screenshot` should be used without an
+additional confirmation step. `focus_window`, `click`, `type`, and `hotkey`
+change the VM desktop state and should be called only after the operator
+confirms the exact action. This backend is for the dedicated VM only; it must not
+be pointed at the host desktop, game automation, or anti-cheat-protected
+applications.
+
+Copy `tools/WinDesktop/bridge` into the VM through the shared folder and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\run.ps1
+```
+
+Then enable the ToolHub backend on the host:
+
+```bash
+export TOOLHUB_WINDESKTOP_ENABLED=true
+export TOOLHUB_WINDESKTOP_BASE_URL="http://192.168.23.128:18787"
+docker compose up -d --build toolhub-api toolhub-mcp
+```
+
+Window titles are included by default; pass `include_titles=false` to redact them.
+Screenshots are first written by the VM to
+`\\vmware-host\Shared Folders\HermesVMShare\WinDesktopOutput`; ToolHub reads
+the corresponding host path
+`/mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput` and writes the
+final PNG under `tools/WinDesktop/work/output`.
 
 ## REST
 
@@ -320,6 +369,13 @@ searxng_search
 webcapture_health
 webcapture_check_url
 webcapture_capture_url
+windesktop_health
+windesktop_list_windows
+windesktop_screenshot
+windesktop_focus_window
+windesktop_click
+windesktop_type
+windesktop_hotkey
 ```
 
 Inside Hermes, these MCP tools are typically exposed with the server prefix as:

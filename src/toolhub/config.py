@@ -23,6 +23,14 @@ DEFAULT_DOCLING_WORK_ROOT = DEFAULT_DOCLING_HOME / "work"
 DEFAULT_WEBCAPTURE_HOME = DEFAULT_TOOLS_ROOT / "WebCapture"
 DEFAULT_WEBCAPTURE_WORK_ROOT = DEFAULT_WEBCAPTURE_HOME / "work"
 DEFAULT_SEARXNG_HOME = DEFAULT_TOOLS_ROOT / "SearXNG"
+DEFAULT_WINDESKTOP_HOME = DEFAULT_TOOLS_ROOT / "WinDesktop"
+DEFAULT_WINDESKTOP_WORK_ROOT = DEFAULT_WINDESKTOP_HOME / "work"
+DEFAULT_WINDESKTOP_BRIDGE_OUTPUT_ROOT = Path(
+    os.getenv(
+        "TOOLHUB_WINDESKTOP_BRIDGE_OUTPUT_ROOT",
+        "/mnt/e/App/VMware/Directory/HermesVMShare/WinDesktopOutput",
+    )
+)
 
 
 def _split_paths(value: str) -> list[str]:
@@ -205,6 +213,31 @@ class SearXNGBackendConfig(BaseModel):
         return normalize_safe_search(value)
 
 
+class WinDesktopBackendConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    base_url: str | None = None
+    token: str | None = None
+    work_root: Path | None = None
+    allowed_output_roots: list[Path] | None = None
+    bridge_output_root: Path | None = None
+    temp_root: Path | None = None
+    max_screenshot_bytes: int | None = None
+
+    @field_validator("allowed_output_roots", mode="before")
+    @classmethod
+    def _coerce_path_lists(cls, value: Any) -> Any:
+        return _coerce_path_list(value)
+
+    @field_validator("max_screenshot_bytes")
+    @classmethod
+    def _validate_max_screenshot_bytes(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("max_screenshot_bytes must be greater than 0")
+        return value
+
+
 class BackendsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -212,6 +245,7 @@ class BackendsConfig(BaseModel):
     docling: DoclingBackendConfig = Field(default_factory=DoclingBackendConfig)
     searxng: SearXNGBackendConfig = Field(default_factory=SearXNGBackendConfig)
     webcapture: WebCaptureBackendConfig = Field(default_factory=WebCaptureBackendConfig)
+    windesktop: WinDesktopBackendConfig = Field(default_factory=WinDesktopBackendConfig)
 
 
 class ConvertXRuntimeSettings(BaseModel):
@@ -301,6 +335,26 @@ class SearXNGRuntimeSettings(BaseModel):
     @classmethod
     def _validate_safe_search(cls, value: str) -> str:
         return normalize_safe_search(value)
+
+
+class WinDesktopRuntimeSettings(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:18787"
+    token: str | None = None
+    work_root: Path = DEFAULT_WINDESKTOP_WORK_ROOT
+    allowed_output_roots: list[Path] = Field(
+        default_factory=lambda: [DEFAULT_WINDESKTOP_WORK_ROOT / "output"]
+    )
+    bridge_output_root: Path = DEFAULT_WINDESKTOP_BRIDGE_OUTPUT_ROOT
+    temp_root: Path = DEFAULT_WINDESKTOP_WORK_ROOT / "tmp"
+    request_timeout_seconds: float = 120.0
+    connect_timeout_seconds: float = 30.0
+    max_screenshot_bytes: int = 64 * 1024 * 1024
+
+    def ensure_directories(self) -> None:
+        self.work_root.expanduser().mkdir(parents=True, exist_ok=True)
+        for root in [*self.allowed_output_roots, self.bridge_output_root, self.temp_root]:
+            root.expanduser().mkdir(parents=True, exist_ok=True)
 
 
 class Settings(BaseSettings):
@@ -457,6 +511,34 @@ class Settings(BaseSettings):
             connect_timeout_seconds=self.connect_timeout_seconds,
         )
 
+    def windesktop(self) -> WinDesktopRuntimeSettings:
+        backend = self.backends.windesktop
+
+        work_root = backend.work_root or DEFAULT_WINDESKTOP_WORK_ROOT
+        allowed_output_roots = backend.allowed_output_roots or [work_root / "output"]
+        bridge_output_root = backend.bridge_output_root or DEFAULT_WINDESKTOP_BRIDGE_OUTPUT_ROOT
+        temp_root = backend.temp_root or work_root / "tmp"
+
+        runtime = WinDesktopRuntimeSettings(
+            enabled=backend.enabled,
+            base_url=backend.base_url or "http://127.0.0.1:18787",
+            token=backend.token,
+            work_root=work_root,
+            allowed_output_roots=allowed_output_roots,
+            bridge_output_root=bridge_output_root,
+            temp_root=temp_root,
+            request_timeout_seconds=self.request_timeout_seconds,
+            connect_timeout_seconds=self.connect_timeout_seconds,
+            max_screenshot_bytes=(
+                backend.max_screenshot_bytes
+                if backend.max_screenshot_bytes is not None
+                else 64 * 1024 * 1024
+            ),
+        )
+        if runtime.enabled:
+            runtime.ensure_directories()
+        return runtime
+
     def ensure_directories(self) -> None:
         if self.backends.convertx.enabled:
             self.convertx().ensure_directories()
@@ -464,6 +546,8 @@ class Settings(BaseSettings):
             self.docling().ensure_directories()
         if self.backends.webcapture.enabled:
             self.webcapture().ensure_directories()
+        if self.backends.windesktop.enabled:
+            self.windesktop().ensure_directories()
 
 
 class YamlSettings(BaseModel):
